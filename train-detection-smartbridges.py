@@ -162,7 +162,7 @@ def save_trains(trains, name_bridge, db_config):
         executor.map(_save_train, args_list)
 
 
-def isolate_trains(df, WINDOWS_SECONS):
+def isolate_trains(df, WINDOWS_SECONDS_START, WINDOWS_SECONDS_END):
     """ Aislamiento de trenes
 
     Args:
@@ -191,8 +191,8 @@ def isolate_trains(df, WINDOWS_SECONS):
             if time_diff >= pd.Timedelta(seconds=5): # Nuevo tren detectado: Suponemos que los trenes estan espaciados por al menos 5 segundos
                 
                 # Agregar WINDOWS_SECONS al inicio y al final del tren
-                start_time = current_train_timestamp[0] - pd.Timedelta(seconds=WINDOWS_SECONS)
-                end_time = current_train_timestamp[-1] + pd.Timedelta(seconds=WINDOWS_SECONS)
+                start_time = current_train_timestamp[0] - pd.Timedelta(seconds=WINDOWS_SECONDS_START)
+                end_time = current_train_timestamp[-1] + pd.Timedelta(seconds=WINDOWS_SECONDS_END)
 
                 trains[train_number] = [start_time, end_time]  # Guardar el timestamp de inicio y fin
 
@@ -203,8 +203,8 @@ def isolate_trains(df, WINDOWS_SECONS):
     # Guardar el último tren si hay datos aun en la lista
     if current_train_timestamp:
 
-        start_time = current_train_timestamp[0] - pd.Timedelta(seconds=WINDOWS_SECONS)
-        end_time = current_train_timestamp[-1] + pd.Timedelta(seconds=WINDOWS_SECONS)
+        start_time = current_train_timestamp[0] - pd.Timedelta(seconds=WINDOWS_SECONDS_START)
+        end_time = current_train_timestamp[-1] + pd.Timedelta(seconds=WINDOWS_SECONDS_END)
 
         trains[train_number] = [start_time, end_time]
 
@@ -261,7 +261,7 @@ def get_trains(name_bridge, start_time, end_time, threshold, db_config):
 
 def main():
 
-    VERSION = "2.1.0"
+    VERSION = "2.2.0"
 
     """# Variables"""
     parser = argparse.ArgumentParser(description="Algoritmo para la detección de vibraciones de trenes en acelerómetros sobre puentes")
@@ -279,7 +279,8 @@ def main():
     parser.add_argument('--end_time', type=str, required=True, help='Fecha y hora de fin (formato: YYYY-MM-DD HH:MM:SS)')
     parser.add_argument('--name_bridge', type=str, required=True, help='Nombre del puente')
     parser.add_argument('--threshold', type=float, default=0.995, help='Umbral de vibración (por defecto: 0.995)')
-    parser.add_argument('--windows_seconds', type=int, default=1, help='Ventana de tiempo extra por cada tren (por defecto: 1)')
+    parser.add_argument('--windows_seconds_start', type=int, default=1, help='Ventana de tiempo inicial extra por cada tren (por defecto: 1)')
+    parser.add_argument('--windows_seconds_end', type=int, default=1.5, help='Ventana de tiempo final extra por cada tren (por defecto: 1.5)')
 
     # Parsear los argumentos
     args = parser.parse_args()
@@ -296,7 +297,8 @@ def main():
     FECHA_HORA_FIN = args.end_time
     NAME_BRIDGE = args.name_bridge
     THERESHOLD = args.threshold
-    WINDOWS_SECONS = args.windows_seconds
+    WINDOWS_SECONDS_START = args.windows_seconds_end
+    WINDOWS_SECONDS_END = args.windows_seconds_end
 
     """# Procesamiento de datos"""
     print("* Variables: ")
@@ -308,7 +310,7 @@ def main():
     data = get_trains(NAME_BRIDGE, FECHA_HORA_INICIO, FECHA_HORA_FIN, THERESHOLD, db_config)
 
     print("* Aislando trenes...", end="", flush=True)
-    trains = isolate_trains(data, WINDOWS_SECONS)
+    trains = isolate_trains(data, WINDOWS_SECONDS_START, WINDOWS_SECONDS_END)
     print("ok")
 
     print("* Guardando trenes...")
