@@ -5,7 +5,7 @@ import pandas as pd
 import numpy as np
 import os
 import argparse
-from datetime import datetime, timedelta
+from datetime import timedelta
 from concurrent.futures import ProcessPoolExecutor
 
 """# Definición funciones
@@ -121,9 +121,9 @@ def get_data_train(name_bridge, start_time, end_time, cursor):
 """## Funciones lógica"""
 
 def _save_train(args):
-    train_number, (start_time, end_time), name_bridge, db_config = args
+    train_number, (start_time, end_time), output_dir, db_config = args
     db, cursor = conectar_db(db_config['host'], db_config['user'], db_config['password'], db_config['database'])
-    train_data = get_data_train(name_bridge, start_time, end_time, cursor)
+    train_data = get_data_train(output_dir, start_time, end_time, cursor)
     cursor.close()
     db.close()
 
@@ -137,26 +137,34 @@ def _save_train(args):
     # Create file name with bridge name and time range
     start_time_str = start_time.strftime("%Y%m%d_%H%M%S")
     end_time_str = end_time.strftime("%Y%m%d_%H%M%S")
+    day_folder = start_time.strftime("%Y-%m-%d")
 
-    filename = os.path.join(name_bridge, f"{name_bridge}-{start_time_str}-{end_time_str}.csv")
+    day_dir = os.path.join(output_dir, day_folder)
+    os.makedirs(day_dir, exist_ok=True)
+
+    filename = os.path.join(day_dir, f"{output_dir}-{start_time_str}-{end_time_str}.csv")
     
     with open(filename, 'w') as f:
         train_data.to_csv(f, index=True, index_label='datetime')  # Write data
 
     print(f"Tren {train_number} guardado en {filename}")
 
-def save_trains(trains, name_bridge, db_config):
+def save_trains(trains, name_bridge, db_config, output_dir=None):
     """Guarda los datos de las vibraciones de cada tren en archivos CSV en paralelo.
         Cada archivo CSV contiene las columnas 'datetime', 'x', 'y', 'z' y 'accelerometer'.
 
     Args:
         trains: Diccionario indexado por un numero de tren y con los valores de [start_time, end_time].
         name_bridge: Nombre del puente para la consulta de los datos.
+        output_dir: Directorio de salida para los archivos CSV. Por defecto es el nombre del puente.
     """
-    os.makedirs(name_bridge, exist_ok=True)
+    if output_dir is None:
+        output_dir = name_bridge
+
+    os.makedirs(output_dir, exist_ok=True)
 
     # Preparar argumentos para la función save_train
-    args_list = [(train_number, (start_time, end_time), name_bridge, db_config) for train_number, (start_time, end_time) in trains.items()]
+    args_list = [(train_number, (start_time, end_time), output_dir, db_config) for train_number, (start_time, end_time) in trains.items()]
 
     with ProcessPoolExecutor() as executor:
         executor.map(_save_train, args_list)
@@ -281,6 +289,7 @@ def main():
     parser.add_argument('--threshold', type=float, default=0.995, help='Umbral de vibración (por defecto: 0.995)')
     parser.add_argument('--windows_seconds_start', type=int, default=1, help='Ventana de tiempo inicial extra por cada tren (por defecto: 1)')
     parser.add_argument('--windows_seconds_end', type=int, default=1.5, help='Ventana de tiempo final extra por cada tren (por defecto: 1.5)')
+    parser.add_argument('--output', type=str, help='Directorio de salida para los archivos CSV (por defecto: nombre del puente)')
 
     # Parsear los argumentos
     args = parser.parse_args()
@@ -299,6 +308,7 @@ def main():
     THERESHOLD = args.threshold
     WINDOWS_SECONDS_START = args.windows_seconds_end
     WINDOWS_SECONDS_END = args.windows_seconds_end
+    OUTPUT_DIR = args.output
 
     """# Procesamiento de datos"""
     print("* Variables: ")
@@ -314,7 +324,7 @@ def main():
     print("ok")
 
     print("* Guardando trenes...")
-    save_trains(trains, NAME_BRIDGE, db_config)
+    save_trains(trains, NAME_BRIDGE, db_config, OUTPUT_DIR)
     
     print("* Proceso finalizado para los trenes del puente", NAME_BRIDGE, "en el intervalo", FECHA_HORA_INICIO, "-", FECHA_HORA_FIN)
 
