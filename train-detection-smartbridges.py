@@ -287,8 +287,8 @@ def main():
     parser.add_argument('--end_time', type=str, required=True, help='Fecha y hora de fin (formato: YYYY-MM-DD HH:MM:SS)')
     parser.add_argument('--name_bridge', type=str, required=True, help='Nombre del puente')
     parser.add_argument('--threshold', type=float, default=0.995, help='Umbral de vibración (por defecto: 0.995)')
-    parser.add_argument('--windows_seconds_start', type=int, default=1, help='Ventana de tiempo inicial extra por cada tren (por defecto: 1)')
-    parser.add_argument('--windows_seconds_end', type=int, default=1.5, help='Ventana de tiempo final extra por cada tren (por defecto: 1.5)')
+    parser.add_argument('--windows_seconds_start', type=float, default=1, help='Ventana de tiempo inicial extra por cada tren (por defecto: 1)')
+    parser.add_argument('--windows_seconds_end', type=float, default=1.5, help='Ventana de tiempo final extra por cada tren (por defecto: 1.5)')
     parser.add_argument('--output', type=str, help='Directorio de salida para los archivos CSV (por defecto: nombre del puente)')
 
     # Parsear los argumentos
