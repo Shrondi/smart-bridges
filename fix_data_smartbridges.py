@@ -99,7 +99,7 @@ def filter_datablocks(data, threshold):
 
     return good_datablocks_str, removed_datablocks_str
 
-def fix_samples_datablocks(bad_data, THRESHOLD_FIX_SAMPLES, ACELEROMETRO, FECHA_HORA_INICIO, FECHA_HORA_FIN):
+def fix_samples_datablocks(bad_data, THRESHOLD_FIX_SAMPLES):
     """
     Analiza las muestras de los datablocks intercambiando los ejes de las muestras que lo requieran.
     
@@ -394,7 +394,7 @@ def main():
         print("ok")
 
         print("* Filtrando datablocks... ", end="", flush=True)
-        str_datablocks_good, str_datablocks_bad = filter_datablocks(datablock_stats, THRESHOLD_FILTER) # Filtrar datablocks que estén fuera de media ± (threshold * desviación estándar)
+        _, str_datablocks_bad = filter_datablocks(datablock_stats, THRESHOLD_FILTER) # Filtrar datablocks que estén fuera de media ± (threshold * desviación estándar)
         print("ok")
 
         print("* Obteniendo datablocks erroneos... ", end="", flush=True)
