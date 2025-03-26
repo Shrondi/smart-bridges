@@ -306,7 +306,7 @@ def main():
     FECHA_HORA_FIN = args.end_time
     NAME_BRIDGE = args.name_bridge
     THERESHOLD = args.threshold
-    WINDOWS_SECONDS_START = args.windows_seconds_end
+    WINDOWS_SECONDS_START = args.windows_seconds_start
     WINDOWS_SECONDS_END = args.windows_seconds_end
     OUTPUT_DIR = args.output
 
