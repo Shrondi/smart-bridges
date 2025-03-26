@@ -120,12 +120,24 @@ def get_data_train(name_bridge, start_time, end_time, cursor):
 
 """## Funciones lógica"""
 
-def _save_train(args):
+def save_train(args):
     train_number, (start_time, end_time), output_dir, db_config = args
-    db, cursor = conectar_db(db_config['host'], db_config['user'], db_config['password'], db_config['database'])
-    train_data = get_data_train(output_dir, start_time, end_time, cursor)
-    cursor.close()
-    db.close()
+
+    try:
+        db, cursor = conectar_db(db_config['host'], db_config['user'], db_config['password'], db_config['database'])
+
+        train_data = get_data_train(output_dir, start_time, end_time, cursor)
+
+    except Exception as e:
+        print(e)
+        sys.exit(1)
+
+    finally:
+        if cursor:
+            cursor.close()
+
+        if db:
+            db.close()
 
     train_data = pd.DataFrame(train_data, columns=['datetime', 'x', 'y', 'z', 'accelerometer'])
     train_data.set_index('datetime', inplace=True)
@@ -149,7 +161,7 @@ def _save_train(args):
 
     print(f"Tren {train_number} guardado en {filename}")
 
-def save_trains(trains, name_bridge, db_config, output_dir=None):
+def parallelise_save_trains(trains, name_bridge, db_config, output_dir=None):
     """Guarda los datos de las vibraciones de cada tren en archivos CSV en paralelo.
         Cada archivo CSV contiene las columnas 'datetime', 'x', 'y', 'z' y 'accelerometer'.
 
@@ -167,7 +179,7 @@ def save_trains(trains, name_bridge, db_config, output_dir=None):
     args_list = [(train_number, (start_time, end_time), output_dir, db_config) for train_number, (start_time, end_time) in trains.items()]
 
     with ProcessPoolExecutor() as executor:
-        executor.map(_save_train, args_list)
+        executor.map(save_train, args_list)
 
 
 def isolate_trains(df, WINDOWS_SECONDS_START, WINDOWS_SECONDS_END):
@@ -181,10 +193,6 @@ def isolate_trains(df, WINDOWS_SECONDS_START, WINDOWS_SECONDS_END):
         Un diccionario indexado por el número de tren y
         los valores son una lista con [timestamp_inicio, timestamp_fin] de cada tren.
     """
-
-    df = pd.DataFrame(df, columns=['datetime'])
-    df.set_index('datetime', inplace=True)
-    df.sort_values('datetime', inplace=True)
 
     train_number = 1
     trains = {}  # Diccionario para almacenar los timestamps de inicio y fin de cada tren
@@ -218,7 +226,7 @@ def isolate_trains(df, WINDOWS_SECONDS_START, WINDOWS_SECONDS_END):
 
     return trains
 
-def parallelise_query(args):
+def get_data(args):
     """Función para ejecutar la consulta de recogida de datos de los trenes en paralelo."""
     name_bridge, start_time, end_time, threshold, db_config = args
 
@@ -234,7 +242,7 @@ def parallelise_query(args):
 
     except Exception as e:
         print(f"Error en intervalo {start_time} - {end_time}: {e}")
-        return pd.DataFrame()
+        sys.exit(1)
 
     finally:
         if db:
@@ -242,7 +250,7 @@ def parallelise_query(args):
         if cursor:
             cursor.close()
 
-def get_trains(name_bridge, start_time, end_time, threshold, db_config):
+def parallelise_get_data(name_bridge, start_time, end_time, threshold, db_config):
     """Obtener paralelamente los datos de los trenes en el intervalo de tiempo especificado para un puente"""
     
     start_time = pd.to_datetime(start_time)
@@ -259,7 +267,7 @@ def get_trains(name_bridge, start_time, end_time, threshold, db_config):
         current_time = next_time
 
     with ProcessPoolExecutor() as executor:
-        results = list(executor.map(parallelise_query, intervals))
+        results = list(executor.map(get_data, intervals))
 
     # Eliminar los dataframes vacios antes de concatenar
     results = [df for df in results if not df.empty]
@@ -269,7 +277,7 @@ def get_trains(name_bridge, start_time, end_time, threshold, db_config):
 
 def main():
 
-    VERSION = "2.2.0"
+    VERSION = "2.3.0"
 
     """# Variables"""
     parser = argparse.ArgumentParser(description="Algoritmo para la detección de vibraciones de trenes en acelerómetros sobre puentes")
@@ -317,14 +325,14 @@ def main():
     print("\t- Puente:", NAME_BRIDGE)
 
     print("\n * Obteniendo datos de los trenes...")
-    data = get_trains(NAME_BRIDGE, FECHA_HORA_INICIO, FECHA_HORA_FIN, THERESHOLD, db_config)
+    data = parallelise_get_data(NAME_BRIDGE, FECHA_HORA_INICIO, FECHA_HORA_FIN, THERESHOLD, db_config)
 
     print("* Aislando trenes...", end="", flush=True)
     trains = isolate_trains(data, WINDOWS_SECONDS_START, WINDOWS_SECONDS_END)
     print("ok")
 
     print("* Guardando trenes...")
-    save_trains(trains, NAME_BRIDGE, db_config, OUTPUT_DIR)
+    parallelise_save_trains(trains, NAME_BRIDGE, db_config, OUTPUT_DIR)
     
     print("* Proceso finalizado para los trenes del puente", NAME_BRIDGE, "en el intervalo", FECHA_HORA_INICIO, "-", FECHA_HORA_FIN)
 
