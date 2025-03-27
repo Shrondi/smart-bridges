@@ -8,6 +8,7 @@ import seaborn as sns
 from matplotlib.backends.backend_pdf import PdfPages
 from scipy.fft import fft, fftfreq
 import argparse
+import tempfile
 
 """# Definición funciones"""
 
@@ -27,6 +28,7 @@ def load_data(input_path):
     return df
 
 def calc_offsets(df):
+    """Calcula y aplica offsets a los datos de aceleración."""
 
     offsets = {}  # Diccionario
 
@@ -50,6 +52,7 @@ def calc_offsets(df):
     return offsets
 
 def calc_fft(df):
+    """Calcula la FFT para los datos de aceleración."""
     """
     Calcula la FFT para los datos de aceleración y devuelve
     las frecuencias y las magnitudes para cada acelerómetro.
@@ -100,6 +103,7 @@ def calc_fft(df):
     return fft_data
 
 def create_color_mapping(accelerometers):
+    """Crea un mapeo de colores para cada acelerómetro."""
     """
     Crea un mapeo de colores para cada acelerómetro.
 
@@ -117,7 +121,27 @@ def create_color_mapping(accelerometers):
     }
     return colors
 
+def configure_axes(axes, titles, xlabel, ylabel):
+    """
+    Configura los ejes de las gráficas con títulos, etiquetas y leyendas.
+
+    Args:
+        axes: Array de ejes a configurar.
+        titles: Lista de títulos para cada eje.
+        xlabel: Etiqueta del eje X.
+        ylabel: Etiqueta del eje Y.
+    """
+    for i, ax in enumerate(axes):
+        ax.set_title(titles[i], fontsize=14, fontweight='bold')
+        ax.set_xlabel(xlabel, fontsize=12)
+        ax.set_ylabel(ylabel, fontsize=12)
+        ax.legend(loc="lower left")
+        ax.grid(which='major', linestyle='--', alpha=0.5)
+        ax.grid(which='minor', linestyle=':', alpha=0.3)
+        ax.autoscale()
+
 def plot_train_data(df, offsets, axes, colors):
+    """Plots accelerometer data on the provided axes."""
     """
     Plots accelerometer data on the provided axes.
 
@@ -143,23 +167,10 @@ def plot_train_data(df, offsets, axes, colors):
         axes[1].plot(time_diff, df_acc['y'], label=f'Acel. {acc_num} (Offset: {offsets[acc_num]["y"]:.4f})', color=colors[acc_num]['y'])
         axes[2].plot(time_diff, df_acc['z'], label=f'Acel. {acc_num} (Offset: {offsets[acc_num]["z"]:.4f})', color=colors[acc_num]['z'])
 
-    # Configurar ejes para cada gráfica
-    for i, ax in enumerate(axes):
-        ax.set_xlabel('Tiempo [s]', fontsize=12)
-        ax.set_ylabel('Aceleración [g]', fontsize=12)
-        ax.legend(loc="lower left")
-        ax.grid(which='major', linestyle='--', alpha=0.5)
-        ax.grid(which='minor', linestyle=':', alpha=0.3)
-        ax.autoscale()
-
-        if i == 0:
-            ax.set_title('Aceleración X', fontsize=14, fontweight='bold')
-        elif i == 1:
-            ax.set_title('Aceleración Y', fontsize=14, fontweight='bold')
-        else:
-            ax.set_title('Aceleración Z', fontsize=14, fontweight='bold')
+    configure_axes(axes, ['Aceleración X', 'Aceleración Y', 'Aceleración Z'], 'Tiempo [s]', 'Aceleración [g]')
 
 def plot_fft(fft_data, axes, colors):
+    """Plots FFT data on the provided axes."""
     """
     Plots FFT data on the provided axes.
 
@@ -186,92 +197,96 @@ def plot_fft(fft_data, axes, colors):
         axes[1].bar(frequencies + offset, fft_y, width=bar_width, label=f'Acel. {acc_num}', color=colors[acc_num]['y'])
         axes[2].bar(frequencies + offset, fft_z, width=bar_width, label=f'Acel. {acc_num}', color=colors[acc_num]['z'])
 
-    # Configurar ejes y leyenda
-    for i, ax in enumerate(axes):
-        ax.set_xlabel('Frecuencia (Hz)')
-        ax.set_ylabel('Amplitud')
-        ax.legend()
+    configure_axes(axes, ['FFT Aceleración X', 'FFT Aceleración Y', 'FFT Aceleración Z'], 'Frecuencia (Hz)', 'Amplitud')
 
-        if i == 0:
-            ax.set_title('FFT Aceleración X', fontsize=14, fontweight='bold')
-        elif i == 1:
-            ax.set_title('FFT Aceleración Y', fontsize=14, fontweight='bold')
-        else:
-            ax.set_title('FFT Aceleración Z', fontsize=14, fontweight='bold')
+def process_file(filepath, pdf, first_date, last_date):
+    """
+    Procesa un archivo CSV y genera gráficos en el PDF.
 
-def process_train_file(bridge_path, output_dir='./'):
+    Args:
+        filepath: Ruta del archivo CSV.
+        pdf: Objeto PdfPages para guardar las gráficas.
+        first_date: Fecha inicial del conjunto de datos.
+        last_date: Fecha final del conjunto de datos.
+    """
+    df = load_data(filepath)
+    if df.empty:
+        print(f"No se encontraron datos en: {filepath}")
+        return first_date, last_date
+
+    # Actualizar fechas
+    if first_date is None:
+        first_date = df.index[0].strftime("%Y%m%d_%H%M%S")
+    last_date = df.index[-1].strftime("%Y%m%d_%H%M%S")
+
+    offsets = calc_offsets(df)
+    fft_data = calc_fft(df)
+    accelerometers = df['accelerometer'].unique()
+    colors = create_color_mapping(accelerometers)
+
+    fig, axes = plt.subplots(3, 2, figsize=(20, 20), gridspec_kw={'width_ratios': [3, 1]})
+    first_datetime = df.index[0]
+    
+    figure_title = f"Tren {first_datetime.strftime('%d/%m')} {first_datetime.strftime('%H:%M:%S')}"
+    fig.suptitle(figure_title, fontsize=20, fontweight='bold')
+    
+    fig.subplots_adjust(hspace=0.5, top=0.92)
+
+    plot_train_data(df, offsets, axes[:, 0], colors)
+    plot_fft(fft_data, axes[:, 1], colors)
+
+    pdf.savefig(fig)
+    plt.close()
+
+    print(f"Datos procesados: {os.path.basename(filepath)}")
+
+    return first_date, last_date
+
+def process_train_file(bridge_path, output_dir='./', pdf_name=None):
+    """Plotea datos de acelerómetros y FFT desde archivos CSV."""
     """
     Plots accelerometer data and FFT from a CSV file or a directory of CSV files.
 
     Args:
         bridge_path (str): The path to the bridge directory containing date subfolders.
+        output_dir (str): Directory where the PDF will be saved.
+        pdf_name (str): Name of the output PDF file. Defaults to the bridge name with the min and max dates.
     """
-
-     # Get the bridge name from the bridge_path
+    # Obtener el nombre del puente
     bridge_name = os.path.basename(os.path.normpath(bridge_path))
 
-    # Create PDF filename using the bridge name
-    pdf_filename = f"{bridge_name}.pdf"
-    pdf_filepath = os.path.join(output_dir, pdf_filename)
+    # Inicializar variables para las fechas
+    first_date, last_date = None, None
 
-    pdf = PdfPages(pdf_filepath)
+    # Crear un archivo PDF temporal
+    with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False, dir=output_dir) as temp_pdf:
+        temp_pdf_filepath = temp_pdf.name
+        pdf = PdfPages(temp_pdf_filepath)
 
-    for date_folder in sorted(os.listdir(bridge_path)):
-        date_folder_path = os.path.join(bridge_path, date_folder)
+        for date_folder in sorted(os.listdir(bridge_path)):
+            date_folder_path = os.path.join(bridge_path, date_folder)
 
-        # Check if it's a directory
-        if os.path.isdir(date_folder_path):
+            # Check if it's a directory
+            if os.path.isdir(date_folder_path):
 
-            for filename in sorted([f for f in os.listdir(date_folder_path) if f.endswith(".csv")]):
-                filepath = os.path.join(date_folder_path, filename)
+                for filename in sorted([f for f in os.listdir(date_folder_path) if f.endswith(".csv")]):
+                    filepath = os.path.join(date_folder_path, filename)
+                    first_date, last_date = process_file(filepath, pdf, first_date, last_date)
 
-                df = load_data(filepath)
+        pdf.close()
 
-                if not df.empty:
-                    offsets = calc_offsets(df)
-                    fft_data = calc_fft(df)
+    # Determinar el nombre final del PDF
+    if not pdf_name:
+        pdf_name = f"{bridge_name}-{first_date}-{last_date}.pdf"
 
-                    # Crear el mapeo de colores
-                    accelerometers = df['accelerometer'].unique()
-                    colors = create_color_mapping(accelerometers)
+    final_pdf_filepath = os.path.join(output_dir, pdf_name)
 
-                    # Create subplots with gridspec_kw
-                    fig, axes = plt.subplots(3, 2, figsize=(20, 20), gridspec_kw={'width_ratios': [3, 1]})  # Adjust width_ratios as needed
+    os.rename(temp_pdf_filepath, final_pdf_filepath)
 
-                    # Obtener el primer datetime para usarlo como titulo
-                    first_datetime = df.index[0]
-
-                    formatted_date = first_datetime.strftime("%d/%m")  # Dia/Mes
-                    formatted_time = first_datetime.strftime("%H:%M:%S")  # Hora:Minutos:Segundos
-
-                    # Crear titulo de la figura
-                    figure_title = f"Tren {formatted_date} {formatted_time}"
-                    fig.suptitle(figure_title, fontsize=20, fontweight='bold')
-
-                    fig.subplots_adjust(hspace=0.5, top=0.92)
-
-                    # Plotear en la primera columna de axes
-                    plot_train_data(df, offsets, axes[:, 0], colors) 
-
-                    # Plotear en la segunda columna de axes 
-                    plot_fft(fft_data, axes[:, 1], colors) 
-
-                    if fig is not None:
-                        pdf.savefig(fig)
-
-                        print(f"Figura guardada en {pdf_filepath}")
-        
-                    plt.close()
-
-                else:
-                    print(f"No se encontraron datos en: {filepath}")
-
-
-    pdf.close()
-
+    return final_pdf_filepath
 
 def main():
-    VERSION = "1.0.0"
+    VERSION = "1.1.0"
 
     parser = argparse.ArgumentParser(description="Visualizador y exportador de datos de vibraciones de trenes en acelerómetros sobre puentes")
 
@@ -279,19 +294,21 @@ def main():
     parser.add_argument('--version', action='version', version=f'%(prog)s {VERSION}')
 
     # Definir los argumentos
-    parser.add_argument('--input', type=str, required=True, help='Directorio de entrada con los datos de los trenes')
+    parser.add_argument('--input', type=str, required=True, help='Directorio de entrada del puente que contiene los datos (obligatorio)')
     parser.add_argument('--output', type=str, default='./', help='Directorio de salida para el archivo PDF (por defecto: ./)')
+    parser.add_argument('--pdf_name', type=str, help='Nombre del archivo PDF de salida (por defecto: nombre del puente)')
 
     # Parsear los argumentos
     args = parser.parse_args()
 
     INPUT_DIR = args.input
     OUTPUT_DIR = args.output
+    PDF_NAME = args.pdf_name
 
     print("\n* Procesando datos...")
-    process_train_file(INPUT_DIR, OUTPUT_DIR)
+    pdf_filepath = process_train_file(INPUT_DIR, OUTPUT_DIR, PDF_NAME)
 
-    print("\n* Exportación completada. Archivo PDF generado en:", OUTPUT_DIR)
+    print("\n* Exportación completada. Archivo PDF guardado en:", pdf_filepath)
 
 if __name__ == '__main__':
     main()
