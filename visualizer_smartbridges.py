@@ -98,7 +98,25 @@ def calc_fft(df):
 
     return fft_data
 
-def plot_train_data(df, offsets, axes):
+def create_color_mapping(accelerometers):
+    """
+    Crea un mapeo de colores para cada acelerómetro.
+
+    Args:
+        accelerometers: Lista de acelerómetros.
+
+    Returns:
+        Un diccionario con el mapeo de colores para cada acelerómetro.
+    """
+    num_accelerometers = len(accelerometers)
+    palette = sns.color_palette('bright', n_colors=num_accelerometers)
+    colors = {
+        acc_num: {'x': palette[i], 'y': palette[(i + 1) % num_accelerometers], 'z': palette[(i + 2) % num_accelerometers]}
+        for i, acc_num in enumerate(accelerometers)
+    }
+    return colors
+
+def plot_train_data(df, offsets, axes, colors):
     """
     Plots accelerometer data on the provided axes.
 
@@ -106,20 +124,11 @@ def plot_train_data(df, offsets, axes):
         df: DataFrame with the accelerometer data.
         offsets: Dictionary containing offsets for each accelerometer.
         axes: Array of axes to plot on.
+        colors: Dictionary containing color mapping for each accelerometer.
     """
 
     # Obtener el número de acelerómetros únicos
     accelerometers = df['accelerometer'].unique()
-    num_accelerometers = len(accelerometers)
-
-    # Generar una paleta de colores dinámica basada en el número de acelerómetros
-    palette = sns.color_palette('bright', n_colors=num_accelerometers)
-
-    # Crear un mapa de colores dinámico
-    colors = {
-        acc_num: {'x': palette[i], 'y': palette[(i + 1) % num_accelerometers], 'z': palette[(i + 2) % num_accelerometers]}
-        for i, acc_num in enumerate(accelerometers)
-    }
 
     # Plotear datos
     for acc_num in accelerometers:
@@ -149,19 +158,18 @@ def plot_train_data(df, offsets, axes):
         else:
             ax.set_title('Aceleración Z', fontsize=14, fontweight='bold')
 
-def plot_fft(fft_data, axes):
+def plot_fft(fft_data, axes, colors):
     """
     Plots FFT data on the provided axes.
 
     Args:
         fft_data: Dictionary containing FFT data for each accelerometer.
         axes: Array of axes to plot on.
+        colors: Dictionary containing color mapping for each accelerometer.
     """
     accelerometers = list(fft_data.keys())
 
     bar_width = 0.8 / len(accelerometers)
-
-    palette = sns.color_palette('bright', n_colors=len(accelerometers))
 
     for i, acc_num in enumerate(accelerometers):
         offset = bar_width * i - bar_width * (len(accelerometers) - 1) / 2 # Offset para dibujar las barras side by side
@@ -173,9 +181,9 @@ def plot_fft(fft_data, axes):
         fft_y = np.abs(fft_data[acc_num]['fft_y'])
         fft_z = np.abs(fft_data[acc_num]['fft_z'])
 
-        axes[0].bar(frequencies + offset, fft_x, width=bar_width, label=f'Acel. {acc_num}', color=palette[i])
-        axes[1].bar(frequencies + offset, fft_y, width=bar_width, label=f'Acel. {acc_num}', color=palette[i])
-        axes[2].bar(frequencies + offset, fft_z, width=bar_width, label=f'Acel. {acc_num}', color=palette[i])
+        axes[0].bar(frequencies + offset, fft_x, width=bar_width, label=f'Acel. {acc_num}', color=colors[acc_num]['x'])
+        axes[1].bar(frequencies + offset, fft_y, width=bar_width, label=f'Acel. {acc_num}', color=colors[acc_num]['y'])
+        axes[2].bar(frequencies + offset, fft_z, width=bar_width, label=f'Acel. {acc_num}', color=colors[acc_num]['z'])
 
     # Configurar ejes y leyenda
     for i, ax in enumerate(axes):
@@ -222,6 +230,10 @@ def process_train_file(bridge_path, show=True, save=False, output_dir='./'):
                     offsets = calc_offsets(df)
                     fft_data = calc_fft(df)
 
+                    # Crear el mapeo de colores
+                    accelerometers = df['accelerometer'].unique()
+                    colors = create_color_mapping(accelerometers)
+
                     # Create subplots with gridspec_kw
                     fig, axes = plt.subplots(3, 2, figsize=(20, 20), gridspec_kw={'width_ratios': [3, 1]})  # Adjust width_ratios as needed
 
@@ -238,18 +250,18 @@ def process_train_file(bridge_path, show=True, save=False, output_dir='./'):
                     fig.subplots_adjust(hspace=0.5, top=0.92)
 
                     # Call plot_train_data with the first column axes
-                    plot_train_data(df, offsets, axes[:, 0])  # Pass axes for acceleration plots
+                    plot_train_data(df, offsets, axes[:, 0], colors) 
 
                     # Call plot_fft with the second column axes
-                    plot_fft(fft_data, axes[:, 1])  # Pass axes for FFT plots
-
-                    if show:
-                        plt.show()
+                    plot_fft(fft_data, axes[:, 1], colors) 
 
                     if save and fig is not None:
                         pdf.savefig(fig)
 
                         print(f"Figura guardada en {pdf_filepath}")
+
+                    if show and fig is not None:
+                        plt.show()
 
                     plt.close()
 
