@@ -7,6 +7,7 @@ import os
 import argparse
 from datetime import timedelta
 from concurrent.futures import ProcessPoolExecutor
+import sys
 
 """# Definición funciones
 
@@ -73,6 +74,31 @@ def get_peak_data(name_bridge, datetime_init, datetime_end, UMBRAL_VIBRACION, cu
         FROM train
         WHERE mag_acel >= {UMBRAL_VIBRACION}
     """
+    cursor.execute(querystr)
+    return cursor.fetchall()
+
+
+def get_stat_data(name_bridge, datetime_init, datetime_end, cursor):
+    """Obtener el timestap de aquellas muestras cuya magnitud de aceleración supere un cierto umbral"""
+    querystr = f"""\
+    SELECT
+          time_begin,
+          AVG(axisx) AS avg_x,
+          AVG(axisy) AS avg_y,
+          AVG(axisz) AS avg_z
+      FROM
+          data_block db
+          JOIN data_accelerometer da ON da.data_block = db.id
+          JOIN configuration_acc ca ON ca.id = db.configuration
+          JOIN accelerometer ac ON ac.sensor = ca.accelerometer
+          JOIN chip ch ON ch.id = ac.chip
+          JOIN sensors s ON s.id = ac.sensor
+          JOIN devices d ON d.id = s.device
+          JOIN bridges b ON b.id = d.bridge
+        WHERE time_begin BETWEEN '{datetime_init}' AND '{datetime_end}'
+        AND b.name = '{name_bridge}'
+      GROUP BY da.data_block
+      """
     cursor.execute(querystr)
     return cursor.fetchall()
 
@@ -194,6 +220,10 @@ def isolate_trains(df, WINDOWS_SECONDS_START, WINDOWS_SECONDS_END):
         los valores son una lista con [timestamp_inicio, timestamp_fin] de cada tren.
     """
 
+    df['datetime'] = pd.to_datetime(df['datetime'])
+    df.set_index('datetime', inplace=True)
+    df.sort_index(inplace=True)
+
     train_number = 1
     trains = {}  # Diccionario para almacenar los timestamps de inicio y fin de cada tren
     current_train_timestamp = []  # Lista para almacenar el timestamp del tren actual
@@ -226,7 +256,7 @@ def isolate_trains(df, WINDOWS_SECONDS_START, WINDOWS_SECONDS_END):
 
     return trains
 
-def get_data(args):
+def peak(args):
     """Función para ejecutar la consulta de recogida de datos de los trenes en paralelo."""
     name_bridge, start_time, end_time, threshold, db_config = args
 
@@ -250,7 +280,7 @@ def get_data(args):
         if cursor:
             cursor.close()
 
-def parallelise_get_data(name_bridge, start_time, end_time, threshold, db_config):
+def parallelise_peak(name_bridge, start_time, end_time, threshold, db_config):
     """Obtener paralelamente los datos de los trenes en el intervalo de tiempo especificado para un puente"""
     
     start_time = pd.to_datetime(start_time)
@@ -267,7 +297,55 @@ def parallelise_get_data(name_bridge, start_time, end_time, threshold, db_config
         current_time = next_time
 
     with ProcessPoolExecutor() as executor:
-        results = list(executor.map(get_data, intervals))
+        results = list(executor.map(peak, intervals))
+
+    # Eliminar los dataframes vacios antes de concatenar
+    results = [df for df in results if not df.empty]
+
+    return pd.concat(results).sort_index() if results else pd.DataFrame()
+
+def stat(args):
+    """Función para ejecutar la consulta de recogida de datos de los trenes en paralelo."""
+    name_bridge, start_time, end_time, db_config = args
+
+    try:
+        # Crear una nueva conexión y cursor para cada hilo
+        db, cursor = conectar_db(db_config['host'], db_config['user'], db_config['password'], db_config['database'])
+        
+        df = get_stat_data(name_bridge, start_time, end_time, cursor)
+
+        print(f"\t - Intervalo: {start_time} - {end_time}, Muestras recuperadas: {len(df) if df else 'None'}")
+
+        return pd.DataFrame(df, columns=['datetime', 'avg_x', 'avg_y', 'avg_z',]) if df else pd.DataFrame()
+
+    except Exception as e:
+        print(f"Error en intervalo {start_time} - {end_time}: {e}")
+        sys.exit(1)
+
+    finally:
+        if db:
+            db.close()
+        if cursor:
+            cursor.close()
+
+def parallelise_stat(name_bridge, start_time, end_time, db_config):
+    """Obtener paralelamente los datos de los trenes en el intervalo de tiempo especificado para un puente"""
+    
+    start_time = pd.to_datetime(start_time)
+    end_time = pd.to_datetime(end_time)
+
+    # Generar intervalos de 2 horas
+    interval_duration = timedelta(hours=2)
+    intervals = []
+    current_time = start_time
+
+    while current_time < end_time:
+        next_time = min(current_time + interval_duration, end_time)
+        intervals.append((name_bridge, current_time, next_time, db_config))
+        current_time = next_time
+
+    with ProcessPoolExecutor() as executor:
+        results = list(executor.map(stat, intervals))
 
     # Eliminar los dataframes vacios antes de concatenar
     results = [df for df in results if not df.empty]
@@ -275,9 +353,35 @@ def parallelise_get_data(name_bridge, start_time, end_time, threshold, db_config
     return pd.concat(results).sort_index() if results else pd.DataFrame()
 
 
+def filter_datablocks(data, threshold):
+    """ 
+    Filter datablocks outside mean ± (threshold * std) and 
+    return a DataFrame with 'datetime' as index and only 'datetime' column for bad datablocks.
+    """
+
+    df = pd.DataFrame(data, columns=['datetime', 'avg_x', 'avg_y', 'avg_z'])
+    df.set_index('datetime', inplace=True)
+    df = df.astype(float)
+
+    # Store all initial datetimes
+    all_datetimes = df.index.tolist()
+
+    for col in ['avg_x', 'avg_y', 'avg_z']:
+        mean = df[col].mean()
+        std = df[col].std()
+        df = df[(df[col] >= mean - threshold * std) & (df[col] <= mean + threshold * std)]
+
+    # Get removed datetimes
+    removed_datetimes = list(set(all_datetimes) - set(df.index.tolist()))
+
+    # Create DataFrame for bad datablocks with 'datetime' as index and only 'datetime' column
+    bad_datablocks_df = pd.DataFrame(removed_datetimes, columns=['datetime'])  # DataFrame with only 'datetime'
+
+    return bad_datablocks_df
+
 def main():
 
-    VERSION = "2.3.0"
+    VERSION = "3.0.0"
 
     """# Variables"""
     parser = argparse.ArgumentParser(description="Algoritmo para la detección de vibraciones de trenes en acelerómetros sobre puentes")
@@ -294,10 +398,23 @@ def main():
     parser.add_argument('--start_time', type=str, required=True, help='Fecha y hora de inicio (formato: YYYY-MM-DD HH:MM:SS)')
     parser.add_argument('--end_time', type=str, required=True, help='Fecha y hora de fin (formato: YYYY-MM-DD HH:MM:SS)')
     parser.add_argument('--name_bridge', type=str, required=True, help='Nombre del puente')
-    parser.add_argument('--threshold', type=float, default=0.995, help='Umbral de vibración (por defecto: 0.995)')
+    
     parser.add_argument('--windows_seconds_start', type=float, default=1, help='Ventana de tiempo inicial extra por cada tren (por defecto: 1)')
     parser.add_argument('--windows_seconds_end', type=float, default=1.5, help='Ventana de tiempo final extra por cada tren (por defecto: 1.5)')
     parser.add_argument('--output', type=str, help='Directorio de salida para los archivos CSV (por defecto: nombre del puente)')
+
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument('--threshold_vibration', type=float, default=0.995, help='Umbral de vibración (por defecto: 0.995). Válido solo en modo "peak"')
+    group.add_argument('--threshold_filter', type=float, default=1.3, help='Umbral de filtro (por defecto: 1.3). Válido solo en modo "filter"')
+
+    # Opción para seleccionar el modo de ejecución
+    parser.add_argument(
+        '--mode',
+        choices=['peak', 'filter'],
+        required=True,
+        type=str,
+        help='Modo de ejecución: peak (por defecto) o filter'
+    )
 
     # Parsear los argumentos
     args = parser.parse_args()
@@ -313,9 +430,13 @@ def main():
     FECHA_HORA_INICIO = args.start_time
     FECHA_HORA_FIN = args.end_time
     NAME_BRIDGE = args.name_bridge
-    THERESHOLD = args.threshold
+
+    THRESHOLD_VIBRATION = args.threshold_vibration
+    THRESHOLD_FILTER = args.threshold_filter
+
     WINDOWS_SECONDS_START = args.windows_seconds_start
     WINDOWS_SECONDS_END = args.windows_seconds_end
+
     OUTPUT_DIR = args.output
 
     """# Procesamiento de datos"""
@@ -324,10 +445,27 @@ def main():
     print("\t- Fecha y hora de fin:", FECHA_HORA_FIN)
     print("\t- Puente:", NAME_BRIDGE)
 
-    print("\n * Obteniendo datos de los trenes...")
-    data = parallelise_get_data(NAME_BRIDGE, FECHA_HORA_INICIO, FECHA_HORA_FIN, THERESHOLD, db_config)
+    print("\t\n- Modo:", args.mode)
+    if args.mode == 'peak':
+        print("\t- Umbral de vibración:", THRESHOLD_VIBRATION)
+    if args.mode == 'filter':
+        print("\t- Umbral de filtro:", THRESHOLD_FILTER)
+
+
+    print("\n * Obteniendo datos...")
+
+    if args.mode == 'peak':
+        data = parallelise_peak(NAME_BRIDGE, FECHA_HORA_INICIO, FECHA_HORA_FIN, THRESHOLD_VIBRATION, db_config)
+
+    if args.mode == 'filter':
+        data = parallelise_stat(NAME_BRIDGE, FECHA_HORA_INICIO, FECHA_HORA_FIN, db_config)
+
 
     print("* Aislando trenes...", end="", flush=True)
+
+    if args.mode == 'filter':
+        data = filter_datablocks(data, THRESHOLD_FILTER)
+
     trains = isolate_trains(data, WINDOWS_SECONDS_START, WINDOWS_SECONDS_END)
     print("ok")
 
