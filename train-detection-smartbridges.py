@@ -2,12 +2,12 @@
 
 import mysql.connector
 import pandas as pd
-import numpy as np
 import os
 import argparse
 from datetime import timedelta
 from concurrent.futures import ProcessPoolExecutor
 import sys
+import shutil
 
 """# Definición funciones
 
@@ -147,12 +147,12 @@ def get_data_train(name_bridge, start_time, end_time, cursor):
 """## Funciones lógica"""
 
 def save_train(args):
-    train_number, (start_time, end_time), output_dir, db_config = args
+    (start_time, end_time), train_output_dir, name_bridge, db_config = args
 
     try:
         db, cursor = conectar_db(db_config['host'], db_config['user'], db_config['password'], db_config['database'])
 
-        train_data = get_data_train(output_dir, start_time, end_time, cursor)
+        train_data = get_data_train(name_bridge, start_time, end_time, cursor)
 
     except Exception as e:
         print(e)
@@ -175,24 +175,21 @@ def save_train(args):
     # Create file name with bridge name and time range
     start_time_str = start_time.strftime("%Y%m%d_%H%M%S")
     end_time_str = end_time.strftime("%Y%m%d_%H%M%S")
-    day_folder = start_time.strftime("%Y-%m-%d")
 
-    day_dir = os.path.join(output_dir, day_folder)
-    os.makedirs(day_dir, exist_ok=True)
-
-    filename = os.path.join(day_dir, f"{output_dir}-{start_time_str}-{end_time_str}.csv")
+    filename = os.path.join(train_output_dir, f"{name_bridge}-{start_time_str}-{end_time_str}.csv")
     
     with open(filename, 'w') as f:
         train_data.to_csv(f, index=True, index_label='datetime')  # Write data
 
-    print(f"Tren {train_number} guardado en {filename}")
+    print(f"\t Datos guardados en {filename}")
+
 
 def parallelise_save_trains(trains, name_bridge, db_config, output_dir=None):
     """Guarda los datos de las vibraciones de cada tren en archivos CSV en paralelo.
         Cada archivo CSV contiene las columnas 'datetime', 'x', 'y', 'z' y 'accelerometer'.
 
     Args:
-        trains: Diccionario indexado por un numero de tren y con los valores de [start_time, end_time].
+        trains: Diccionario con los valores de [start_time, end_time].
         name_bridge: Nombre del puente para la consulta de los datos.
         output_dir: Directorio de salida para los archivos CSV. Por defecto es el nombre del puente.
     """
@@ -201,8 +198,27 @@ def parallelise_save_trains(trains, name_bridge, db_config, output_dir=None):
 
     os.makedirs(output_dir, exist_ok=True)
 
+    # Crear carpetas por cada día diferente en los trenes
+    unique_days = set(start_time.date() for start_time, _ in trains.values())
+    for day in unique_days:
+        day_dir = os.path.join(output_dir, day.strftime("%Y-%m-%d"))
+
+        # Borrar la carpeta del día si existe
+        if os.path.exists(day_dir):
+            shutil.rmtree(day_dir)
+
+        os.makedirs(day_dir, exist_ok=False)
+
     # Preparar argumentos para la función save_train
-    args_list = [(train_number, (start_time, end_time), output_dir, db_config) for train_number, (start_time, end_time) in trains.items()]
+    args_list = [
+        (
+            (start_time, end_time),
+            os.path.join(output_dir, start_time.date().strftime("%Y-%m-%d")),
+            name_bridge,
+            db_config
+        )
+        for start_time, end_time in trains.values()
+    ]
 
     with ProcessPoolExecutor() as executor:
         executor.map(save_train, args_list)
@@ -216,16 +232,14 @@ def isolate_trains(df, WINDOWS_SECONDS_START, WINDOWS_SECONDS_END):
         WINDOWS_SECONS: Una ventana de tiempo en segundos para agregar al inicio y al final de cada tren
 
     Returns:
-        Un diccionario indexado por el número de tren y
-        los valores son una lista con [timestamp_inicio, timestamp_fin] de cada tren.
+        Un diccionario con los valores de [timestamp_inicio, timestamp_fin] de cada tren.
     """
 
     df['datetime'] = pd.to_datetime(df['datetime'])
     df.set_index('datetime', inplace=True)
     df.sort_index(inplace=True)
 
-    train_number = 1
-    trains = {}  # Diccionario para almacenar los timestamps de inicio y fin de cada tren
+    trains = []  # Lista para almacenar los timestamps de inicio y fin de cada tren
     current_train_timestamp = []  # Lista para almacenar el timestamp del tren actual
 
     for i in range(len(df)):
@@ -240,9 +254,7 @@ def isolate_trains(df, WINDOWS_SECONDS_START, WINDOWS_SECONDS_END):
                 start_time = current_train_timestamp[0] - pd.Timedelta(seconds=WINDOWS_SECONDS_START)
                 end_time = current_train_timestamp[-1] + pd.Timedelta(seconds=WINDOWS_SECONDS_END)
 
-                trains[train_number] = [start_time, end_time]  # Guardar el timestamp de inicio y fin
-
-                train_number += 1
+                trains.append((start_time, end_time))  # Guardar el timestamp de inicio y fin
 
                 current_train_timestamp = []  # Reiniciar la lista para el nuevo tren
 
@@ -252,9 +264,10 @@ def isolate_trains(df, WINDOWS_SECONDS_START, WINDOWS_SECONDS_END):
         start_time = current_train_timestamp[0] - pd.Timedelta(seconds=WINDOWS_SECONDS_START)
         end_time = current_train_timestamp[-1] + pd.Timedelta(seconds=WINDOWS_SECONDS_END)
 
-        trains[train_number] = [start_time, end_time]
+        trains.append((start_time, end_time))
 
-    return trains
+    return {i: train for i, train in enumerate(trains)}
+
 
 def peak(args):
     """Función para ejecutar la consulta de recogida de datos de los trenes en paralelo."""
@@ -280,6 +293,8 @@ def peak(args):
         if cursor:
             cursor.close()
 
+
+
 def parallelise_peak(name_bridge, start_time, end_time, threshold, db_config):
     """Obtener paralelamente los datos de los trenes en el intervalo de tiempo especificado para un puente"""
     
@@ -304,6 +319,8 @@ def parallelise_peak(name_bridge, start_time, end_time, threshold, db_config):
 
     return pd.concat(results).sort_index() if results else pd.DataFrame()
 
+
+
 def stat(args):
     """Función para ejecutar la consulta de recogida de datos de los trenes en paralelo."""
     name_bridge, start_time, end_time, db_config = args
@@ -327,6 +344,8 @@ def stat(args):
             db.close()
         if cursor:
             cursor.close()
+
+
 
 def parallelise_stat(name_bridge, start_time, end_time, db_config):
     """Obtener paralelamente los datos de los trenes en el intervalo de tiempo especificado para un puente"""
@@ -381,7 +400,7 @@ def filter_datablocks(data, threshold):
 
 def main():
 
-    VERSION = "3.0.0"
+    VERSION = "3.1.0"
 
     """# Variables"""
     parser = argparse.ArgumentParser(description="Algoritmo para la detección de vibraciones de trenes en acelerómetros sobre puentes")
@@ -441,11 +460,10 @@ def main():
 
     """# Procesamiento de datos"""
     print("* Variables: ")
-    print("\t- Fecha y hora de inicio:", FECHA_HORA_INICIO)
-    print("\t- Fecha y hora de fin:", FECHA_HORA_FIN)
     print("\t- Puente:", NAME_BRIDGE)
+    print("\t- Intervalo:", FECHA_HORA_INICIO, "-", FECHA_HORA_FIN)
 
-    print("\t\n- Modo:", args.mode)
+    print("\n\t- Modo:", args.mode)
     if args.mode == 'peak':
         print("\t- Umbral de vibración:", THRESHOLD_VIBRATION)
     if args.mode == 'filter':
@@ -472,7 +490,7 @@ def main():
     print("* Guardando trenes...")
     parallelise_save_trains(trains, NAME_BRIDGE, db_config, OUTPUT_DIR)
     
-    print("* Proceso finalizado para los trenes del puente", NAME_BRIDGE, "en el intervalo", FECHA_HORA_INICIO, "-", FECHA_HORA_FIN)
+    print("\n* Se han guardado", len(trains), "trenes del puente", NAME_BRIDGE, "en el intervalo", FECHA_HORA_INICIO, "-", FECHA_HORA_FIN)
 
 if __name__ == "__main__":
     main()
