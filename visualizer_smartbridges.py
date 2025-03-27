@@ -108,36 +108,30 @@ def plot_train_data(df, offsets, axes):
         axes: Array of axes to plot on.
     """
 
-    # Paleta de colores para los acelerometros
-    palette = sns.color_palette('bright', n_colors=8)
+    # Obtener el número de acelerómetros únicos
+    accelerometers = df['accelerometer'].unique()
+    num_accelerometers = len(accelerometers)
 
-    # Create a color map using the palette
+    # Generar una paleta de colores dinámica basada en el número de acelerómetros
+    palette = sns.color_palette('bright', n_colors=num_accelerometers)
+
+    # Crear un mapa de colores dinámico
     colors = {
-        1: {'x': palette[0], 'y': palette[1], 'z': palette[2]},
-        2: {'x': palette[3], 'y': palette[4], 'z': palette[5]},
-        3: {'x': palette[6], 'y': palette[7], 'z': palette[0]},
-        4: {'x': palette[1], 'y': palette[2], 'z': palette[3]},
-        5: {'x': palette[4], 'y': palette[5], 'z': palette[6]},
-        6: {'x': palette[7], 'y': palette[0], 'z': palette[1]},
-        7: {'x': palette[2], 'y': palette[3], 'z': palette[4]},
-        8: {'x': palette[5], 'y': palette[6], 'z': palette[7]}
+        acc_num: {'x': palette[i], 'y': palette[(i + 1) % num_accelerometers], 'z': palette[(i + 2) % num_accelerometers]}
+        for i, acc_num in enumerate(accelerometers)
     }
 
     # Plotear datos
-    for acc_num in df['accelerometer'].unique():
-        df_acc = df[df['accelerometer'] == acc_num]
-        df_acc = df_acc[['x', 'y', 'z']]
+    for acc_num in accelerometers:
+        df_acc = df[df['accelerometer'] == acc_num][['x', 'y', 'z']]
 
-        # Remuestrear a 1 segundo
-        #df_acc = df_acc.resample('10ms').mean()
-
-        # Calculate time difference in seconds
+        # Calcular la diferencia de tiempo en segundos
         time_diff = (df_acc.index - df_acc.index[0]).to_series().dt.total_seconds()
 
-        # Access color using accelerometer number and axis
-        axes[0].plot(time_diff, df_acc['x'], label=f'Acel. {acc_num} (Offset: {offsets[acc_num]["x"]:.4f})', color=colors.get(acc_num, {}).get('x'))
-        axes[1].plot(time_diff, df_acc['y'], label=f'Acel. {acc_num} (Offset: {offsets[acc_num]["y"]:.4f})', color=colors.get(acc_num, {}).get('y'))
-        axes[2].plot(time_diff, df_acc['z'], label=f'Acel. {acc_num} (Offset: {offsets[acc_num]["z"]:.4f})', color=colors.get(acc_num, {}).get('z'))
+        # Acceder a los colores usando el número de acelerómetro y el eje
+        axes[0].plot(time_diff, df_acc['x'], label=f'Acel. {acc_num} (Offset: {offsets[acc_num]["x"]:.4f})', color=colors[acc_num]['x'])
+        axes[1].plot(time_diff, df_acc['y'], label=f'Acel. {acc_num} (Offset: {offsets[acc_num]["y"]:.4f})', color=colors[acc_num]['y'])
+        axes[2].plot(time_diff, df_acc['z'], label=f'Acel. {acc_num} (Offset: {offsets[acc_num]["z"]:.4f})', color=colors[acc_num]['z'])
 
     # Configurar ejes para cada gráfica
     for i, ax in enumerate(axes):
