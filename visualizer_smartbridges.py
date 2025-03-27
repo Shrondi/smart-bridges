@@ -7,6 +7,7 @@ import os
 import seaborn as sns
 from matplotlib.backends.backend_pdf import PdfPages
 from scipy.fft import fft, fftfreq
+import argparse
 
 """# Definición funciones"""
 
@@ -198,7 +199,7 @@ def plot_fft(fft_data, axes, colors):
         else:
             ax.set_title('FFT Aceleración Z', fontsize=14, fontweight='bold')
 
-def process_train_file(bridge_path, show=True, save=False, output_dir='./'):
+def process_train_file(bridge_path, output_dir='./'):
     """
     Plots accelerometer data and FFT from a CSV file or a directory of CSV files.
 
@@ -206,14 +207,14 @@ def process_train_file(bridge_path, show=True, save=False, output_dir='./'):
         bridge_path (str): The path to the bridge directory containing date subfolders.
     """
 
-    if save:
-          # Get the bridge name from the bridge_path
-        bridge_name = os.path.basename(os.path.normpath(bridge_path))
+     # Get the bridge name from the bridge_path
+    bridge_name = os.path.basename(os.path.normpath(bridge_path))
 
-        # Create PDF filename using the bridge name
-        pdf_filename = f"{bridge_name}.pdf"
-        pdf_filepath = os.path.join(output_dir, pdf_filename)
-        pdf = PdfPages(pdf_filepath)
+    # Create PDF filename using the bridge name
+    pdf_filename = f"{bridge_name}.pdf"
+    pdf_filepath = os.path.join(output_dir, pdf_filename)
+
+    pdf = PdfPages(pdf_filepath)
 
     for date_folder in sorted(os.listdir(bridge_path)):
         date_folder_path = os.path.join(bridge_path, date_folder)
@@ -249,31 +250,48 @@ def process_train_file(bridge_path, show=True, save=False, output_dir='./'):
 
                     fig.subplots_adjust(hspace=0.5, top=0.92)
 
-                    # Call plot_train_data with the first column axes
+                    # Plotear en la primera columna de axes
                     plot_train_data(df, offsets, axes[:, 0], colors) 
 
-                    # Call plot_fft with the second column axes
+                    # Plotear en la segunda columna de axes 
                     plot_fft(fft_data, axes[:, 1], colors) 
 
-                    if save and fig is not None:
+                    if fig is not None:
                         pdf.savefig(fig)
 
                         print(f"Figura guardada en {pdf_filepath}")
-
-                    if show and fig is not None:
-                        plt.show()
-
+        
                     plt.close()
 
                 else:
                     print(f"No se encontraron datos en: {filepath}")
 
-    if save:
-        pdf.close()
+
+    pdf.close()
 
 
-def main(): 
-    process_train_file('Guadiato', save=True, show=False)
+def main():
+    VERSION = "1.0.0"
+
+    parser = argparse.ArgumentParser(description="Visualizador y exportador de datos de vibraciones de trenes en acelerómetros sobre puentes")
+
+    # Añadir la opción --version para mostrar la versión
+    parser.add_argument('--version', action='version', version=f'%(prog)s {VERSION}')
+
+    # Definir los argumentos
+    parser.add_argument('--input', type=str, required=True, help='Directorio de entrada con los datos de los trenes')
+    parser.add_argument('--output', type=str, default='./', help='Directorio de salida para el archivo PDF (por defecto: ./)')
+
+    # Parsear los argumentos
+    args = parser.parse_args()
+
+    INPUT_DIR = args.input
+    OUTPUT_DIR = args.output
+
+    print("\n* Procesando datos...")
+    process_train_file(INPUT_DIR, OUTPUT_DIR)
+
+    print("\n* Exportación completada. Archivo PDF generado en:", OUTPUT_DIR)
 
 if __name__ == '__main__':
     main()
