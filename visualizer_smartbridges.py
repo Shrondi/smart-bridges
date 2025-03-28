@@ -241,7 +241,7 @@ def process_file(filepath, pdf, first_date, last_date):
 
     return first_date, last_date
 
-def process_train_file(bridge_path, output_dir='./', pdf_name=None):
+def process_train_file(bridge_path, output_dir='./', pdf_name=None, selected_dates=None):
     """Plotea datos de acelerómetros y FFT desde archivos CSV."""
     """
     Plots accelerometer data and FFT from a CSV file or a directory of CSV files.
@@ -250,6 +250,7 @@ def process_train_file(bridge_path, output_dir='./', pdf_name=None):
         bridge_path (str): The path to the bridge directory containing date subfolders.
         output_dir (str): Directory where the PDF will be saved.
         pdf_name (str): Name of the output PDF file. Defaults to the bridge name with the min and max dates.
+        selected_dates (List[str], optional): List of selected date folders to process. Defaults to None.
     """
     # Obtener el nombre del puente
     bridge_name = os.path.basename(os.path.normpath(bridge_path))
@@ -262,7 +263,9 @@ def process_train_file(bridge_path, output_dir='./', pdf_name=None):
         temp_pdf_filepath = temp_pdf.name
         pdf = PdfPages(temp_pdf_filepath)
 
-        for date_folder in sorted(os.listdir(bridge_path)):
+        date_folders = selected_dates if selected_dates else sorted(os.listdir(bridge_path))
+
+        for date_folder in date_folders:
             date_folder_path = os.path.join(bridge_path, date_folder)
 
             # Check if it's a directory
@@ -284,8 +287,39 @@ def process_train_file(bridge_path, output_dir='./', pdf_name=None):
 
     return final_pdf_filepath
 
+def select_date_folders(input_dir):
+    """
+    Permite al usuario seleccionar carpetas de fechas de forma interactiva.
+
+    Args:
+        input_dir (str): Directorio de entrada que contiene las carpetas de fechas.
+
+    Returns:
+        List[str]: Lista de carpetas seleccionadas por el usuario.
+    """
+    date_folders = sorted([d for d in os.listdir(input_dir) if os.path.isdir(os.path.join(input_dir, d))])
+    if not date_folders:
+        print("No se encontraron carpetas de fechas en el directorio especificado.")
+        return []
+
+    print("Carpetas de fechas disponibles:")
+    for i, folder in enumerate(date_folders):
+        print(f"{i + 1}. {folder}")
+
+    selected_indices = input("Ingrese los números de las carpetas a procesar, separados por comas (o 'all' para procesar todas): ")
+
+    if selected_indices.lower() == 'all':
+        return date_folders
+    else:
+        try:
+            selected_indices = [int(x.strip()) - 1 for x in selected_indices.split(',')]
+            return [date_folders[i] for i in selected_indices if 0 <= i < len(date_folders)]
+        except ValueError:
+            print("Selección inválida. No se procesará ninguna carpeta.")
+            return []
+
 def main():
-    VERSION = "1.2.0"
+    VERSION = "1.3.0"
 
     parser = argparse.ArgumentParser(description="Visualizador y exportador de datos de vibraciones de trenes en acelerómetros sobre puentes")
 
@@ -296,6 +330,7 @@ def main():
     parser.add_argument('--input', type=str, required=True, help='Directorio de entrada del puente que contiene los datos (obligatorio)')
     parser.add_argument('--output', type=str, default='./', help='Directorio de salida para el archivo PDF (por defecto: ./)')
     parser.add_argument('--pdf_name', type=str, help='Nombre del archivo PDF de salida (por defecto: nombre del puente)')
+    parser.add_argument('--select_dates', action='store_true', help='Seleccionar interactivamente las carpetas de fechas')
 
     # Parsear los argumentos
     args = parser.parse_args()
@@ -304,10 +339,17 @@ def main():
     OUTPUT_DIR = args.output
     PDF_NAME = args.pdf_name
 
-    print("\n* Procesando datos...")
-    pdf_filepath = process_train_file(INPUT_DIR, OUTPUT_DIR, PDF_NAME)
+    selected_dates = None
+    if args.select_dates:
+        selected_dates = select_date_folders(INPUT_DIR)
 
-    print("\n* Exportación completada. Archivo PDF guardado en:", pdf_filepath)
+    print("\n* Procesando datos...")
+    pdf_filepath = process_train_file(INPUT_DIR, OUTPUT_DIR, PDF_NAME, selected_dates)
+
+    if pdf_filepath:
+        print("\n* Exportación completada. Archivo PDF guardado en:", pdf_filepath)
+    else:
+        print("\n* No se generó ningún archivo PDF.")
 
 if __name__ == '__main__':
     main()
