@@ -203,11 +203,7 @@ def parallelise_save_trains(trains, name_bridge, db_config, output_dir=None):
     for day in unique_days:
         day_dir = os.path.join(output_dir, day.strftime("%Y-%m-%d"))
 
-        # Borrar la carpeta del día si existe
-        if os.path.exists(day_dir):
-            shutil.rmtree(day_dir)
-
-        os.makedirs(day_dir, exist_ok=False)
+        os.makedirs(day_dir, exist_ok=True)
 
     # Preparar argumentos para la función save_train
     args_list = [
