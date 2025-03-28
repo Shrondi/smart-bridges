@@ -91,7 +91,7 @@ def calc_fft(df):
         fft_z[0] = 0
 
         # Vector de frecuencias
-        frequencies = fftfreq(L, 1/Fs)
+        frequencies = fftfreq(L, Fs)
 
         fft_data[acc_num] = {
             'frequencies': frequencies,
