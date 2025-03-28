@@ -120,7 +120,7 @@ def create_color_mapping(accelerometers):
     }
     return colors
 
-def configure_axes(axes, titles, xlabel, ylabel):
+def configure_axes(axes, titles, xlabel, ylabel, legend_loc="lower left"):
     """
     Configura los ejes de las gráficas con títulos, etiquetas y leyendas.
 
@@ -134,7 +134,7 @@ def configure_axes(axes, titles, xlabel, ylabel):
         ax.set_title(titles[i], fontsize=14, fontweight='bold')
         ax.set_xlabel(xlabel, fontsize=12)
         ax.set_ylabel(ylabel, fontsize=12)
-        ax.legend(loc="lower left")
+        ax.legend(loc=legend_loc)
         ax.grid(which='major', linestyle='--', alpha=0.5)
         ax.grid(which='minor', linestyle=':', alpha=0.3)
         ax.autoscale()
@@ -196,7 +196,7 @@ def plot_fft(fft_data, axes, colors):
         axes[1].bar(frequencies + offset, fft_y, width=bar_width, label=f'Acel. {acc_num}', color=colors[acc_num]['y'])
         axes[2].bar(frequencies + offset, fft_z, width=bar_width, label=f'Acel. {acc_num}', color=colors[acc_num]['z'])
 
-    configure_axes(axes, ['FFT Aceleración X', 'FFT Aceleración Y', 'FFT Aceleración Z'], 'Frecuencia (Hz)', 'Amplitud')
+    configure_axes(axes, ['FFT Aceleración X', 'FFT Aceleración Y', 'FFT Aceleración Z'], 'Frecuencia (Hz)', 'Amplitud', 'upper right')
 
 def process_file(filepath, pdf, first_date, last_date):
     """
@@ -223,7 +223,7 @@ def process_file(filepath, pdf, first_date, last_date):
     accelerometers = df['accelerometer'].unique()
     colors = create_color_mapping(accelerometers)
 
-    fig, axes = plt.subplots(3, 2, figsize=(20, 20), gridspec_kw={'width_ratios': [3, 1]})
+    fig, axes = plt.subplots(3, 2, figsize=(20, 20), gridspec_kw={'width_ratios': [3, 3]})
     first_datetime = df.index[0]
     
     figure_title = f"Tren {first_datetime.strftime('%d/%m')} {first_datetime.strftime('%H:%M:%S')}"
