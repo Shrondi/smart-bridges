@@ -80,7 +80,6 @@ def calc_fft(df):
         t = df_acc.index.to_numpy()  # Obtener los valores de tiempo del índice
         t = (t - t[0]) / np.timedelta64(1, 's') # restando t[0] (para empezar en 0) y convertir a segundos
         Ts = np.mean(np.diff(t))
-        Fs = 1 / Ts
 
         # Transformada de Fourier
         fft_x = fft(df_acc['x'].values)
@@ -91,13 +90,13 @@ def calc_fft(df):
         fft_z[0] = 0
 
         # Vector de frecuencias
-        frequencies = fftfreq(L, Fs)
+        frequencies = fftfreq(L, Ts)
 
         fft_data[acc_num] = {
-            'frequencies': frequencies,
-            'fft_x': fft_x,
-            'fft_y': fft_y,
-            'fft_z': fft_z,
+            'frequencies': frequencies[:L // 2],
+            'fft_x': fft_x[:L // 2] * 2,
+            'fft_y': fft_y[:L // 2] * 2,
+            'fft_z': fft_z[:L // 2] * 2,
         }
 
     return fft_data
@@ -286,7 +285,7 @@ def process_train_file(bridge_path, output_dir='./', pdf_name=None):
     return final_pdf_filepath
 
 def main():
-    VERSION = "1.1.0"
+    VERSION = "1.2.0"
 
     parser = argparse.ArgumentParser(description="Visualizador y exportador de datos de vibraciones de trenes en acelerómetros sobre puentes")
 
