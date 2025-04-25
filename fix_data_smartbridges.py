@@ -408,7 +408,7 @@ def main():
 
         print("* Arreglando muestras de los datablocks erroneos...")
         # Se limpian aquellos datablocks que tenian solo algunas muestras erroneas o cambiados los ejes
-        fix_samples_datablocks(bad_data, THRESHOLD_FIX_SAMPLES, ACELEROMETRO, FECHA_HORA_INICIO, FECHA_HORA_FIN) # Datablocks mejorados
+        fix_samples_datablocks(bad_data, THRESHOLD_FIX_SAMPLES) # Datablocks mejorados
         print("* Arreglando muestras de los datablocks erroneos... ok")
         
         
