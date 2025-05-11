@@ -2,6 +2,8 @@
 
 import pandas as pd
 import matplotlib.pyplot as plt
+import matplotlib
+matplotlib.use('Agg') # Usar backend no interactivo (solo para escribir en archivos)
 import numpy as np
 import os
 import seaborn as sns
@@ -9,6 +11,7 @@ from matplotlib.backends.backend_pdf import PdfPages
 from scipy.fft import fft, fftfreq
 import argparse
 import tempfile
+from concurrent.futures import ProcessPoolExecutor
 
 """# Definición funciones"""
 
@@ -216,7 +219,7 @@ def process_file(filepath, pdf, first_date, last_date):
     # Actualizar fechas
     if first_date is None:
         first_date = df.index[0].strftime("%Y%m%d_%H%M%S")
-    last_date = df.index[-1].strftime("%Y%m%d_%H%M%S")
+    last_date = df.index[-1].strftime("%H%M%S")
 
     offsets = calc_offsets(df)
     fft_data = calc_fft(df)
@@ -241,7 +244,7 @@ def process_file(filepath, pdf, first_date, last_date):
 
     return first_date, last_date
 
-def process_train_file(bridge_path, date, output_dir='./', pdf_name=None):
+def create_report(bridge_path, date):
     """Plotea datos de acelerómetros y FFT desde archivos CSV."""
     """
     Plots accelerometer data and FFT from a CSV file or a directory of CSV files.
@@ -252,30 +255,38 @@ def process_train_file(bridge_path, date, output_dir='./', pdf_name=None):
         pdf_name (str): Name of the output PDF file. Defaults to the bridge name with the min and max dates.
         selected_dates (List[str], optional): List of selected date folders to process. Defaults to None.
     """
+
+    raw_folder = os.path.join(bridge_path, 'raw', date)
+    report_folder = os.path.join(bridge_path, 'report', date)
+
+    # Crear la carpeta de reportes si no existe
+    os.makedirs(report_folder, exist_ok=True)
+
     # Obtener el nombre del puente
     bridge_name = os.path.basename(os.path.normpath(bridge_path))
 
     # Inicializar variables para las fechas
     first_date, last_date = None, None
 
-    full_path = os.path.join(bridge_path, date)
-    if not os.path.exists(full_path) or not os.path.isdir(full_path):
-        print(f"No se encontró la ruta: {full_path}")
+    # Verificar si la carpeta 'raw' existe
+    if not os.path.exists(raw_folder) or not os.path.isdir(raw_folder):
+        print(f"No se encontró la ruta: {raw_folder}")
         return None
 
-    with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False, dir=output_dir) as temp_pdf:
+    with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False, dir=report_folder) as temp_pdf:
         temp_pdf_filepath = temp_pdf.name
         pdf = PdfPages(temp_pdf_filepath)
-        for filename in sorted([f for f in os.listdir(full_path) if f.endswith(".csv")]):
-            filepath = os.path.join(full_path, filename)
+
+        for filename in sorted([f for f in os.listdir(raw_folder) if f.endswith(".csv")]):
+            filepath = os.path.join(raw_folder, filename)
             first_date, last_date = process_file(filepath, pdf, first_date, last_date)
+        
         pdf.close()
 
     # Determinar el nombre final del PDF
-    if not pdf_name:
-        pdf_name = f"{bridge_name}-{first_date}-{last_date}.pdf"
+    pdf_name = f"{bridge_name}-{first_date}-{last_date}.pdf"
 
-    final_pdf_filepath = os.path.join(output_dir, pdf_name)
+    final_pdf_filepath = os.path.join(report_folder, pdf_name)
 
     os.rename(temp_pdf_filepath, final_pdf_filepath)
 
@@ -283,30 +294,27 @@ def process_train_file(bridge_path, date, output_dir='./', pdf_name=None):
 
 
 def main():
-    VERSION = "2.0.0"
+    VERSION = "3.0.0"
 
-    parser = argparse.ArgumentParser(description="Visualizador y exportador de datos de vibraciones de trenes en acelerómetros sobre puentes")
-
+    parser = argparse.ArgumentParser(description="Procesamiento paralelo de datos de acelerómetros por puente")
     parser.add_argument('--version', action='version', version=f'%(prog)s {VERSION}')
-    parser.add_argument('--bridge_folder', type=str, required=True, help='Directorio del puente que contiene las carpetas de fecha')
-    parser.add_argument('--output', type=str, default='./', help='Directorio de salida para el PDF (por defecto: ./)')
-    parser.add_argument('--pdf_name', type=str, help='Nombre del archivo PDF de salida')
-    parser.add_argument('--date', required=True, type=str, help='Ruta relativa a la carpeta de fecha (por ejemplo: 2025/febrero/27)')
-
+    parser.add_argument('--bridges_folder', type=str, required=True, help='Carpeta raíz que contiene carpetas de puentes')
+    parser.add_argument('--date', required=True, type=str, help='Subcarpeta de fecha dentro de cada puente (ej. 2025/febrero/27)')
+    
     args = parser.parse_args()
+    root_folder = args.bridges_folder
+    date = args.date
 
-    INPUT_DIR = args.bridge_folder
-    OUTPUT_DIR = args.output
-    PDF_NAME = args.pdf_name
-    DATE = args.date
-
-    print("\n* Procesando datos...")
-    pdf_filepath = process_train_file(INPUT_DIR, DATE, OUTPUT_DIR, PDF_NAME)
-
-    if pdf_filepath:
-        print("\n* Exportación completada. Archivo PDF guardado en:", pdf_filepath)
-    else:
-        print("\n* No se generó ningún archivo PDF.")
+    bridge_folders = [os.path.join(root_folder, d) for d in os.listdir(root_folder)
+                      if os.path.isdir(os.path.join(root_folder, d))]
+    
+    with ProcessPoolExecutor() as executor:
+        futures = [executor.submit(create_report, bridge_folder, date) for bridge_folder in bridge_folders]
+        for future in futures:
+            try:
+                print(f"Archivo generado: {future.result()}")
+            except Exception as e:
+                print(f"Error procesando un puente: {e}")
 
 if __name__ == '__main__':
     main()
