@@ -82,9 +82,9 @@ def calc_fft(df):
         Ts = np.mean(np.diff(t))
 
         # Transformada de Fourier
-        fft_x = fft(df_acc['x'].values)
-        fft_y = fft(df_acc['y'].values)
-        fft_z = fft(df_acc['z'].values)
+        fft_x = fft(df_acc['x'].values, workers=-1)
+        fft_y = fft(df_acc['y'].values, workers=-1)
+        fft_z = fft(df_acc['z'].values, workers=-1)
 
         # Borrar la componente continua del eje Z
         fft_z[0] = 0
@@ -241,7 +241,7 @@ def process_file(filepath, pdf, first_date, last_date):
 
     return first_date, last_date
 
-def process_train_file(bridge_path, output_dir='./', pdf_name=None, selected_dates=None):
+def process_train_file(bridge_path, date, output_dir='./', pdf_name=None):
     """Plotea datos de acelerómetros y FFT desde archivos CSV."""
     """
     Plots accelerometer data and FFT from a CSV file or a directory of CSV files.
@@ -258,23 +258,17 @@ def process_train_file(bridge_path, output_dir='./', pdf_name=None, selected_dat
     # Inicializar variables para las fechas
     first_date, last_date = None, None
 
-    # Crear un archivo PDF temporal
+    full_path = os.path.join(bridge_path, date)
+    if not os.path.exists(full_path) or not os.path.isdir(full_path):
+        print(f"No se encontró la ruta: {full_path}")
+        return None
+
     with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False, dir=output_dir) as temp_pdf:
         temp_pdf_filepath = temp_pdf.name
         pdf = PdfPages(temp_pdf_filepath)
-
-        date_folders = selected_dates if selected_dates else sorted(os.listdir(bridge_path))
-
-        for date_folder in date_folders:
-            date_folder_path = os.path.join(bridge_path, date_folder)
-
-            # Check if it's a directory
-            if os.path.isdir(date_folder_path):
-
-                for filename in sorted([f for f in os.listdir(date_folder_path) if f.endswith(".csv")]):
-                    filepath = os.path.join(date_folder_path, filename)
-                    first_date, last_date = process_file(filepath, pdf, first_date, last_date)
-
+        for filename in sorted([f for f in os.listdir(full_path) if f.endswith(".csv")]):
+            filepath = os.path.join(full_path, filename)
+            first_date, last_date = process_file(filepath, pdf, first_date, last_date)
         pdf.close()
 
     # Determinar el nombre final del PDF
@@ -287,64 +281,27 @@ def process_train_file(bridge_path, output_dir='./', pdf_name=None, selected_dat
 
     return final_pdf_filepath
 
-def select_date_folders(input_dir):
-    """
-    Permite al usuario seleccionar carpetas de fechas de forma interactiva.
-
-    Args:
-        input_dir (str): Directorio de entrada que contiene las carpetas de fechas.
-
-    Returns:
-        List[str]: Lista de carpetas seleccionadas por el usuario.
-    """
-    date_folders = sorted([d for d in os.listdir(input_dir) if os.path.isdir(os.path.join(input_dir, d))])
-    if not date_folders:
-        print("No se encontraron carpetas de fechas en el directorio especificado.")
-        return []
-
-    print("Carpetas de fechas disponibles:")
-    for i, folder in enumerate(date_folders):
-        print(f"{i + 1}. {folder}")
-
-    selected_indices = input("Ingrese los números de las carpetas a procesar, separados por comas (o 'all' para procesar todas): ")
-
-    if selected_indices.lower() == 'all':
-        return date_folders
-    else:
-        try:
-            selected_indices = [int(x.strip()) - 1 for x in selected_indices.split(',')]
-            return [date_folders[i] for i in selected_indices if 0 <= i < len(date_folders)]
-        except ValueError:
-            print("Selección inválida. No se procesará ninguna carpeta.")
-            return []
 
 def main():
-    VERSION = "1.3.0"
+    VERSION = "2.0.0"
 
     parser = argparse.ArgumentParser(description="Visualizador y exportador de datos de vibraciones de trenes en acelerómetros sobre puentes")
 
-    # Añadir la opción --version para mostrar la versión
     parser.add_argument('--version', action='version', version=f'%(prog)s {VERSION}')
+    parser.add_argument('--bridge_folder', type=str, required=True, help='Directorio del puente que contiene las carpetas de fecha')
+    parser.add_argument('--output', type=str, default='./', help='Directorio de salida para el PDF (por defecto: ./)')
+    parser.add_argument('--pdf_name', type=str, help='Nombre del archivo PDF de salida')
+    parser.add_argument('--date', required=True, type=str, help='Ruta relativa a la carpeta de fecha (por ejemplo: 2025/febrero/27)')
 
-    # Definir los argumentos
-    parser.add_argument('--input', type=str, required=True, help='Directorio de entrada del puente que contiene los datos (obligatorio)')
-    parser.add_argument('--output', type=str, default='./', help='Directorio de salida para el archivo PDF (por defecto: ./)')
-    parser.add_argument('--pdf_name', type=str, help='Nombre del archivo PDF de salida (por defecto: nombre del puente)')
-    parser.add_argument('--select_dates', action='store_true', help='Seleccionar interactivamente las carpetas de fechas')
-
-    # Parsear los argumentos
     args = parser.parse_args()
 
-    INPUT_DIR = args.input
+    INPUT_DIR = args.bridge_folder
     OUTPUT_DIR = args.output
     PDF_NAME = args.pdf_name
-
-    selected_dates = None
-    if args.select_dates:
-        selected_dates = select_date_folders(INPUT_DIR)
+    DATE = args.date
 
     print("\n* Procesando datos...")
-    pdf_filepath = process_train_file(INPUT_DIR, OUTPUT_DIR, PDF_NAME, selected_dates)
+    pdf_filepath = process_train_file(INPUT_DIR, DATE, OUTPUT_DIR, PDF_NAME)
 
     if pdf_filepath:
         print("\n* Exportación completada. Archivo PDF guardado en:", pdf_filepath)
