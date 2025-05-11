@@ -261,9 +261,6 @@ def create_report(bridge_path, date):
     raw_folder = os.path.join(bridge_path, 'raw', date)
     report_folder = os.path.join(bridge_path, 'report', date)
 
-    # Crear la carpeta de reportes si no existe
-    os.makedirs(report_folder, exist_ok=True)
-
     # Obtener el nombre del puente
     bridge_name = os.path.basename(os.path.normpath(bridge_path))
 
@@ -274,6 +271,9 @@ def create_report(bridge_path, date):
     if not os.path.exists(raw_folder) or not os.path.isdir(raw_folder):
         print(f"No se encontró la ruta: {raw_folder}")
         return None
+    
+    # Crear la carpeta de reportes si no existe
+    os.makedirs(report_folder, exist_ok=True)
 
     with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False, dir=report_folder) as temp_pdf:
         temp_pdf_filepath = temp_pdf.name
