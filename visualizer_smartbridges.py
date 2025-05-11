@@ -12,6 +12,8 @@ from scipy.fft import fft, fftfreq
 import argparse
 import tempfile
 from concurrent.futures import ProcessPoolExecutor
+import calendar, locale
+from datetime import datetime, timedelta
 
 """# Definición funciones"""
 
@@ -293,23 +295,44 @@ def create_report(bridge_path, date):
     return final_pdf_filepath
 
 
+def get_directory_date(date_str):
+    # Convertir la fecha en formato 'YYYYMMDD' al formato de directorio
+
+    # Extraer año, mes y día
+    year = date_str[:4]
+    month = int(date_str[4:6])  # Convertir el mes a número
+    day = date_str[6:]
+
+    # Obtener el mes en español (minúsculas)
+    locale.setlocale(locale.LC_ALL, 'es_ES.utf8')
+    month_name = calendar.month_name[month].lower()
+
+    # Formato de directorio: 'YYYY/mes/día'
+    return f"{year}/{month_name}/{day}"
+
+
 def main():
-    VERSION = "3.0.0"
+    VERSION = "3.1.0"
 
     parser = argparse.ArgumentParser(description="Procesamiento paralelo de datos de acelerómetros por puente")
     parser.add_argument('--version', action='version', version=f'%(prog)s {VERSION}')
     parser.add_argument('--bridges_folder', type=str, required=True, help='Carpeta raíz que contiene carpetas de puentes')
-    parser.add_argument('--date', required=True, type=str, help='Subcarpeta de fecha dentro de cada puente (ej. 2025/febrero/27)')
     
     args = parser.parse_args()
     root_folder = args.bridges_folder
-    date = args.date
+    
+    # Usar la fecha de ayer
+    yesterday = datetime.now() - timedelta(1)
+    date_str = yesterday.strftime('%Y%m%d')  # Formato 'YYYYMMDD'
+
+    # Convertir la fecha al formato de directorio
+    date_folder = get_directory_date(date_str)
 
     bridge_folders = [os.path.join(root_folder, d) for d in os.listdir(root_folder)
                       if os.path.isdir(os.path.join(root_folder, d))]
     
     with ProcessPoolExecutor() as executor:
-        futures = [executor.submit(create_report, bridge_folder, date) for bridge_folder in bridge_folders]
+        futures = [executor.submit(create_report, bridge_folder, date_folder) for bridge_folder in bridge_folders]
         for future in futures:
             try:
                 print(f"Archivo generado: {future.result()}")
