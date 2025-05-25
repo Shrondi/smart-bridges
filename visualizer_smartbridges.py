@@ -3,7 +3,7 @@
 import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib
-matplotlib.use('Agg') # Usar backend no interactivo (solo para escribir en archivos)
+matplotlib.use('Agg')  # Usar backend no interactivo (solo para escribir en archivos)
 import numpy as np
 import os
 import seaborn as sns
@@ -12,8 +12,11 @@ from scipy.fft import fft, fftfreq
 import argparse
 import tempfile
 from concurrent.futures import ProcessPoolExecutor
-import calendar, locale
+import calendar
+import locale
 from datetime import datetime, timedelta
+from collections import defaultdict
+import re
 
 """# Definición funciones"""
 
@@ -21,9 +24,15 @@ def load_data(input_path):
     """Loads and processes a single CSV file."""
     print(f"Cargando datos: {input_path}")
     try:
-        df = pd.read_csv(input_path, index_col='datetime', parse_dates=['datetime'],
-                         date_format='%Y-%m-%d %H:%M:%S.%f', engine='c')
-
+        df = pd.read_csv(input_path, index_col='timestamp', parse_dates=['timestamp'], date_format='%H:%M:%S.%f', engine='c')
+        
+        # Renombrar columnas para que coincidan con el resto del código
+        df.rename(columns={
+            'x_accel (g)': 'x',
+            'y_accel (g)': 'y',
+            'z_accel (g)': 'z'
+        }, inplace=True)
+        
         df.sort_index(inplace=True)
 
     except Exception as e:
@@ -51,26 +60,13 @@ def calc_offsets(df):
         df.loc[df['accelerometer'] == acc_num, 'y'] = df_acc['y'] - mean_y
         df.loc[df['accelerometer'] == acc_num, 'z'] = df_acc['z'] - mean_z + 1
 
-        # Store the calculated offsets in the dictionary
+        # Guardar los offsets calculados
         offsets[acc_num] = {'x': -mean_x, 'y': -mean_y, 'z': -(mean_z - 1)}
 
     return offsets
 
 def calc_fft(df):
     """Calcula la FFT para los datos de aceleración."""
-    """
-    Calcula la FFT para los datos de aceleración y devuelve
-    las frecuencias y las magnitudes para cada acelerómetro.
-
-    Args:
-        df: DataFrame con los datos de aceleración.
-
-    Returns:
-        Un diccionario con las frecuencias y las magnitudes de la FFT
-        para cada acelerómetro.
-    """
-
-  # https://es.mathworks.com/matlabcentral/answers/712808-how-to-remove-dc-component-in-fft
 
     fft_data = {}
     accelerometers = df['accelerometer'].unique()
@@ -78,23 +74,23 @@ def calc_fft(df):
     for acc_num in accelerometers:
         df_acc = df[df['accelerometer'] == acc_num]
 
-        # Longitud de la señal
         L = len(df_acc)
+        if L == 0:
+            continue
 
-        # Intervalo de muestreo (Ts) y frecuencia de muestreo (Fs)
-        t = df_acc.index.to_numpy()  # Obtener los valores de tiempo del índice
-        t = (t - t[0]) / np.timedelta64(1, 's') # restando t[0] (para empezar en 0) y convertir a segundos
+        # Intervalo de muestreo (Ts) en segundos
+        t = df_acc.index.to_numpy()
+        t = (t - t[0]) / np.timedelta64(1, 's')
         Ts = np.mean(np.diff(t))
 
-        # Transformada de Fourier
+        # FFT con todos los núcleos (-1)
         fft_x = fft(df_acc['x'].values, workers=-1)
         fft_y = fft(df_acc['y'].values, workers=-1)
         fft_z = fft(df_acc['z'].values, workers=-1)
 
-        # Borrar la componente continua del eje Z
+        # Eliminar componente DC de Z
         fft_z[0] = 0
 
-        # Vector de frecuencias
         frequencies = fftfreq(L, Ts)
 
         fft_data[acc_num] = {
@@ -107,34 +103,25 @@ def calc_fft(df):
     return fft_data
 
 def create_color_mapping(accelerometers):
-    """Crea un mapeo de colores para cada acelerómetro."""
-    """
-    Crea un mapeo de colores para cada acelerómetro.
+    """Crea un mapeo de colores consistente para cada acelerómetro."""
+    sorted_accs = sorted(accelerometers)  # Orden fijo
+    num_accelerometers = len(sorted_accs)
 
-    Args:
-        accelerometers: Lista de acelerómetros.
-
-    Returns:
-        Un diccionario con el mapeo de colores para cada acelerómetro.
-    """
-    num_accelerometers = len(accelerometers)
+    # Fijar semilla para paleta determinista (opcional si usas 'bright', que ya es fija)
     palette = sns.color_palette('bright', n_colors=num_accelerometers)
+
     colors = {
-        acc_num: {'x': palette[i], 'y': palette[(i + 1) % num_accelerometers], 'z': palette[(i + 2) % num_accelerometers]}
-        for i, acc_num in enumerate(accelerometers)
+        acc_num: {
+            'x': palette[i],
+            'y': palette[(i + 1) % num_accelerometers],
+            'z': palette[(i + 2) % num_accelerometers]
+        }
+        for i, acc_num in enumerate(sorted_accs)
     }
     return colors
 
 def configure_axes(axes, titles, xlabel, ylabel, legend_loc="lower left"):
-    """
-    Configura los ejes de las gráficas con títulos, etiquetas y leyendas.
-
-    Args:
-        axes: Array de ejes a configurar.
-        titles: Lista de títulos para cada eje.
-        xlabel: Etiqueta del eje X.
-        ylabel: Etiqueta del eje Y.
-    """
+    """Configura los ejes de las gráficas con títulos, etiquetas y leyendas."""
     for i, ax in enumerate(axes):
         ax.set_title(titles[i], fontsize=14, fontweight='bold')
         ax.set_xlabel(xlabel, fontsize=12)
@@ -145,28 +132,15 @@ def configure_axes(axes, titles, xlabel, ylabel, legend_loc="lower left"):
         ax.autoscale()
 
 def plot_train_data(df, offsets, axes, colors):
-    """Plots accelerometer data on the provided axes."""
-    """
-    Plots accelerometer data on the provided axes.
-
-    Args:
-        df: DataFrame with the accelerometer data.
-        offsets: Dictionary containing offsets for each accelerometer.
-        axes: Array of axes to plot on.
-        colors: Dictionary containing color mapping for each accelerometer.
-    """
-
-    # Obtener el número de acelerómetros únicos
+    """Grafica los datos de acelerómetro en los ejes proporcionados."""
     accelerometers = df['accelerometer'].unique()
+    accelerometers = sorted(accelerometers)
 
-    # Plotear datos
     for acc_num in accelerometers:
         df_acc = df[df['accelerometer'] == acc_num][['x', 'y', 'z']]
 
-        # Calcular la diferencia de tiempo en segundos
         time_diff = (df_acc.index - df_acc.index[0]).to_series().dt.total_seconds()
 
-        # Acceder a los colores usando el número de acelerómetro y el eje
         axes[0].plot(time_diff, df_acc['x'], label=f'Acel. {acc_num} (Offset: {offsets[acc_num]["x"]:.4f})', color=colors[acc_num]['x'])
         axes[1].plot(time_diff, df_acc['y'], label=f'Acel. {acc_num} (Offset: {offsets[acc_num]["y"]:.4f})', color=colors[acc_num]['y'])
         axes[2].plot(time_diff, df_acc['z'], label=f'Acel. {acc_num} (Offset: {offsets[acc_num]["z"]:.4f})', color=colors[acc_num]['z'])
@@ -174,25 +148,18 @@ def plot_train_data(df, offsets, axes, colors):
     configure_axes(axes, ['Aceleración X', 'Aceleración Y', 'Aceleración Z'], 'Tiempo [s]', 'Aceleración [g]')
 
 def plot_fft(fft_data, axes, colors):
-    """Plots FFT data on the provided axes."""
-    """
-    Plots FFT data on the provided axes.
-
-    Args:
-        fft_data: Dictionary containing FFT data for each accelerometer.
-        axes: Array of axes to plot on.
-        colors: Dictionary containing color mapping for each accelerometer.
-    """
+    """Grafica los datos FFT en los ejes proporcionados."""
     accelerometers = list(fft_data.keys())
+    if not accelerometers:
+        return
 
     bar_width = 0.8 / len(accelerometers)
 
     for i, acc_num in enumerate(accelerometers):
-        offset = bar_width * i - bar_width * (len(accelerometers) - 1) / 2 # Offset para dibujar las barras side by side
+        offset = bar_width * i - bar_width * (len(accelerometers) - 1) / 2
 
         frequencies = fft_data[acc_num]['frequencies']
 
-        # Obtener la magnitud de la FFT
         fft_x = np.abs(fft_data[acc_num]['fft_x'])
         fft_y = np.abs(fft_data[acc_num]['fft_y'])
         fft_z = np.abs(fft_data[acc_num]['fft_z'])
@@ -203,141 +170,150 @@ def plot_fft(fft_data, axes, colors):
 
     configure_axes(axes, ['FFT Aceleración X', 'FFT Aceleración Y', 'FFT Aceleración Z'], 'Frecuencia (Hz)', 'Amplitud', 'upper right')
 
-def process_file(filepath, pdf, first_date, last_date):
+def process_file_group(file_group, pdf, day, month_number):
     """
-    Procesa un archivo CSV y genera gráficos en el PDF.
+    Procesa un grupo de archivos CSV con el mismo timestamp (±1s) y genera una gráfica combinada.
 
     Args:
-        filepath: Ruta del archivo CSV.
-        pdf: Objeto PdfPages para guardar las gráficas.
-        first_date: Fecha inicial del conjunto de datos.
-        last_date: Fecha final del conjunto de datos.
+        file_group: Lista de tuplas (sensor_name, filepath)
+        pdf: Objeto PdfPages donde guardar la gráfica.
     """
-    df = load_data(filepath)
-    if df.empty:
-        print(f"No se encontraron datos en: {filepath}")
-        return first_date, last_date
+    combined_df = pd.DataFrame()
 
-    # Actualizar fechas
-    if first_date is None:
-        first_date = df.index[0].strftime("%Y%m%d_%H%M%S")
-    last_date = df.index[-1].strftime("%H%M%S")
+    for sensor, filepath in file_group:
+        df = load_data(filepath)
+        if df.empty:
+            print(f"Sin datos en: {filepath}")
+            continue
 
-    offsets = calc_offsets(df)
-    fft_data = calc_fft(df)
-    accelerometers = df['accelerometer'].unique()
-    colors = create_color_mapping(accelerometers)
+        df['accelerometer'] = sensor
+        combined_df = pd.concat([combined_df, df])
+
+    if combined_df.empty:
+        print("Todos los archivos del grupo estaban vacíos.")
+        return
+
+    # Además validar si el índice tiene valores válidos
+    if combined_df.index.isnull().all():
+        print("Índice de timestamps vacío o inválido en grupo de archivos.")
+        return
+    
+    combined_df.sort_index(inplace=True)
+
+    offsets = calc_offsets(combined_df)
+    fft_data = calc_fft(combined_df)
+    sensors = combined_df['accelerometer'].unique()
+    colors = create_color_mapping(sensors)
 
     fig, axes = plt.subplots(3, 2, figsize=(20, 20), gridspec_kw={'width_ratios': [3, 3]})
-    first_datetime = df.index[0]
-    
-    figure_title = f"Tren {first_datetime.strftime('%d/%m')} {first_datetime.strftime('%H:%M:%S')}"
+    first_datetime = combined_df.index[0]
+
+    figure_title = f"Train {day}/{month_number} {first_datetime.strftime('%H:%M:%S')}"
     fig.suptitle(figure_title, fontsize=20, fontweight='bold')
-    
     fig.subplots_adjust(hspace=0.5, top=0.92)
 
-    plot_train_data(df, offsets, axes[:, 0], colors)
+    plot_train_data(combined_df, offsets, axes[:, 0], colors)
     plot_fft(fft_data, axes[:, 1], colors)
 
     pdf.savefig(fig)
     plt.close()
 
-    print(f"Datos procesados: {os.path.basename(filepath)}")
+    print(f"Processed group of {len(file_group)} files at {first_datetime.strftime('%H:%M:%S')}")
 
-    return first_date, last_date
+def parse_timestamp_from_filename(filename):
+    """
+    Extrae la hora del nombre del archivo tipo: acceleration_12-34-56.csv
+    """
+    match = re.match(r"acceleration_(\d{2})-(\d{2})-(\d{2})\.csv", filename)
+    if match:
+        h, m, s = match.groups()
+        return datetime.strptime(f"{h}:{m}:{s}", "%H:%M:%S")
+    return None
 
 def create_report(bridge_path, date):
-    """Plotea datos de acelerómetros y FFT desde archivos CSV."""
     """
-    Plots accelerometer data and FFT from a CSV file or a directory of CSV files.
+    Groups accelerometer data from all sensors by timestamp (±1 second) and generates a PDF report.
 
     Args:
-        bridge_path (str): The path to the bridge directory containing date subfolders.
-        output_dir (str): Directory where the PDF will be saved.
-        pdf_name (str): Name of the output PDF file. Defaults to the bridge name with the min and max dates.
-        selected_dates (List[str], optional): List of selected date folders to process. Defaults to None.
+        bridge_path (str): Path to the bridge directory.
+        date (str): A string like '20250522'.
+
+    Returns:
+        str: Path to the generated PDF report, or None if input folder is invalid.
     """
 
-    raw_folder = os.path.join(bridge_path, 'raw', date)
-    report_folder = os.path.join(bridge_path, 'report', date)
+    # Parse date components
+    year = date[:4]
+    month_number = int(date[4:6])
+    day = date[6:]
 
-    # Obtener el nombre del puente
-    bridge_name = os.path.basename(os.path.normpath(bridge_path))
+    # Si no quieres problemas con locale en otros sistemas, comenta la siguiente línea
+    try:
+        locale.setlocale(locale.LC_TIME, 'en_US.UTF-8')
+    except locale.Error:
+        pass  # Ignorar si no se puede establecer locale
 
-    # Inicializar variables para las fechas
-    first_date, last_date = None, None
+    month_name = calendar.month_name[month_number].lower()
 
-    # Verificar si la carpeta 'raw' existe
-    if not os.path.exists(raw_folder) or not os.path.isdir(raw_folder):
-        print(f"No se encontró la ruta: {raw_folder}")
+    # Construimos la ruta con la estructura Bridge/year/month_name/day
+    date_folder_path = os.path.join(bridge_path, year, month_name, day)
+
+    if not os.path.isdir(date_folder_path):
+        print(f"Ruta no encontrada: {date_folder_path}")
         return None
-    
-    # Crear la carpeta de reportes si no existe
-    os.makedirs(report_folder, exist_ok=True)
 
-    with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False, dir=report_folder) as temp_pdf:
-        temp_pdf_filepath = temp_pdf.name
-        pdf = PdfPages(temp_pdf_filepath)
+    # Recopilar archivos csv para cada sensor
+    sensor_files = defaultdict(list)
 
-        for filename in sorted([f for f in os.listdir(raw_folder) if f.endswith(".csv")]):
-            filepath = os.path.join(raw_folder, filename)
-            first_date, last_date = process_file(filepath, pdf, first_date, last_date)
-        
-        pdf.close()
+    for root, dirs, files in os.walk(date_folder_path):
+        if 'anomalias' in dirs:
+            dirs.remove('anomalias')
 
-    # Determinar el nombre final del PDF
-    pdf_name = f"{bridge_name}-{first_date}-{last_date}.pdf"
+        for file in files:
+            if file.endswith('.csv'):
+                sensor_name = os.path.basename(root)
+                full_path = os.path.join(root, file)
+                sensor_files[sensor_name].append(full_path)
 
-    final_pdf_filepath = os.path.join(report_folder, pdf_name)
+    # Agrupar archivos por timestamp aproximado
+    time_groups = defaultdict(list)
 
-    os.rename(temp_pdf_filepath, final_pdf_filepath)
+    for sensor, files in sensor_files.items():
+        for f in files:
+            timestamp = parse_timestamp_from_filename(os.path.basename(f))
+            if timestamp is None:
+                continue
+            # Agrupar por segundos redondeados
+            rounded_time = timestamp.replace(microsecond=0)
+            time_groups[rounded_time].append((sensor, f))
 
-    return final_pdf_filepath
+    if not time_groups:
+        print("No se encontraron archivos para procesar.")
+        return None
 
+    output_pdf = os.path.join(bridge_path, 'report', f"train_report_{date}.pdf")
 
-def get_directory_date(date_str):
-    # Convertir la fecha en formato 'YYYYMMDD' al formato de directorio
+    with PdfPages(output_pdf) as pdf:
+        for group_time in sorted(time_groups.keys()):
+            process_file_group(time_groups[group_time], pdf, day, month_number)
 
-    # Extraer año, mes y día
-    year = date_str[:4]
-    month = int(date_str[4:6])  # Convertir el mes a número
-    day = date_str[6:]
+    print(f"Reporte guardado en: {output_pdf}")
 
-    # Obtener el mes en español (minúsculas)
-    locale.setlocale(locale.LC_ALL, 'es_ES.utf8')
-    month_name = calendar.month_name[month].lower()
-
-    # Formato de directorio: 'YYYY/mes/día'
-    return f"{year}/{month_name}/{day}"
-
+    return output_pdf
 
 def main():
     VERSION = "3.1.0"
 
-    parser = argparse.ArgumentParser(description="Procesamiento paralelo de datos de acelerómetros por puente")
+    parser = argparse.ArgumentParser(description='Generar informe PDF de acelerómetros agrupados por timestamp')
+    parser.add_argument('--bridge_path', required=True, type=str, help='Ruta a la carpeta del puente')
+    parser.add_argument('--date', required=True, type=str, help='Fecha en formato YYYYMMDD')
     parser.add_argument('--version', action='version', version=f'%(prog)s {VERSION}')
-    parser.add_argument('--bridges_folder', type=str, required=True, help='Carpeta raíz que contiene carpetas de puentes')
-    
+
     args = parser.parse_args()
-    root_folder = args.bridges_folder
-    
-    # Usar la fecha de ayer
-    yesterday = datetime.now() - timedelta(1)
-    date_str = yesterday.strftime('%Y%m%d')  # Formato 'YYYYMMDD'
 
-    # Convertir la fecha al formato de directorio
-    date_folder = get_directory_date(date_str)
+    output = create_report(args.bridge_path, args.date)
+    if output is None:
+        print("No se pudo generar el informe.")
 
-    bridge_folders = [os.path.join(root_folder, d) for d in os.listdir(root_folder)
-                      if os.path.isdir(os.path.join(root_folder, d))]
-    
-    with ProcessPoolExecutor() as executor:
-        futures = [executor.submit(create_report, bridge_folder, date_folder) for bridge_folder in bridge_folders]
-        for future in futures:
-            try:
-                print(f"Archivo generado: {future.result()}")
-            except Exception as e:
-                print(f"Error procesando un puente: {e}")
-
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
