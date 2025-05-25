@@ -10,13 +10,13 @@ import seaborn as sns
 from matplotlib.backends.backend_pdf import PdfPages
 from scipy.fft import fft, fftfreq
 import argparse
-import tempfile
 from concurrent.futures import ProcessPoolExecutor
 import calendar
 import locale
-from datetime import datetime, timedelta
+from datetime import datetime
 from collections import defaultdict
 import re
+from bisect import bisect_left
 
 """# Definición funciones"""
 
@@ -230,6 +230,48 @@ def parse_timestamp_from_filename(filename):
         return datetime.strptime(f"{h}:{m}:{s}", "%H:%M:%S")
     return None
 
+def group_files_by_time(sensor_files, max_diff_seconds=2):
+    """
+    Agrupa archivos en grupos disjuntos por timestamp, de forma que
+    la diferencia máxima dentro de cada grupo sea <= max_diff_seconds.
+    
+    Args:
+        sensor_files: dict {sensor: [filepath, ...]}
+        max_diff_seconds: máximo tiempo en segundos para agrupar archivos
+    
+    Returns:
+        List of groups, cada grupo es una lista de (sensor, filepath)
+    """
+    entries = []
+
+    # Parsear timestamps y preparar lista
+    for sensor, files in sensor_files.items():
+        for filepath in files:
+            timestamp = parse_timestamp_from_filename(os.path.basename(filepath))
+            if timestamp:
+                entries.append((timestamp, sensor, filepath))
+
+    # Ordenar por timestamp ascendente
+    entries.sort(key=lambda x: x[0])
+
+    groups = []
+    n = len(entries)
+    start = 0
+
+    while start < n:
+        group = [(entries[start][1], entries[start][2])]
+        end = start + 1
+
+        # Avanzar end mientras timestamp[end] esté dentro del rango de timestamp[start]
+        while end < n and (entries[end][0] - entries[start][0]).total_seconds() <= max_diff_seconds:
+            group.append((entries[end][1], entries[end][2]))
+            end += 1
+
+        groups.append(group)
+        start = end  # saltamos al siguiente grupo (sin solapamiento)
+
+    return groups
+
 def create_report(bridge_path, date):
     """
     Groups accelerometer data from all sensors by timestamp (±1 second) and generates a PDF report.
@@ -275,34 +317,24 @@ def create_report(bridge_path, date):
                 full_path = os.path.join(root, file)
                 sensor_files[sensor_name].append(full_path)
 
-    # Agrupar archivos por timestamp aproximado
-    time_groups = defaultdict(list)
+    groups = group_files_by_time(sensor_files, max_diff_seconds=1)
 
-    for sensor, files in sensor_files.items():
-        for f in files:
-            timestamp = parse_timestamp_from_filename(os.path.basename(f))
-            if timestamp is None:
-                continue
-            # Agrupar por segundos redondeados
-            rounded_time = timestamp.replace(microsecond=0)
-            time_groups[rounded_time].append((sensor, f))
-
-    if not time_groups:
+    if not groups:
         print("No se encontraron archivos para procesar.")
         return None
 
     output_pdf = os.path.join(bridge_path, 'report', f"train_report_{date}.pdf")
 
     with PdfPages(output_pdf) as pdf:
-        for group_time in sorted(time_groups.keys()):
-            process_file_group(time_groups[group_time], pdf, day, month_number)
+        for group in groups:
+            process_file_group(group, pdf, day, month_number)
 
     print(f"Reporte guardado en: {output_pdf}")
 
     return output_pdf
 
 def main():
-    VERSION = "3.1.0"
+    VERSION = "3.2.0"
 
     parser = argparse.ArgumentParser(description='Generar informe PDF de acelerómetros agrupados por timestamp')
     parser.add_argument('--bridge_path', required=True, type=str, help='Ruta a la carpeta del puente')
