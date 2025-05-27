@@ -101,7 +101,7 @@ def generar_grafico(path_dia, sensores_bins, bin_size=5, scale=15):
 
     print(f"[✔] PDF generado: {output_path}")
 
-def procesar_ficheros(path_dia, bin_size=5):
+def procesar_ficheros(path_dia, bin_size=5, scale=15):
     """
     Procesa todos los sensores en un día, generando los bins
     de eventos y creando el gráfico si hay datos.
@@ -127,7 +127,7 @@ def procesar_ficheros(path_dia, bin_size=5):
         print(f"[!] Sin datos para graficar en: {path_dia}")
         return
 
-    generar_grafico(path_dia, sensores_bins, bin_size)
+    generar_grafico(path_dia, sensores_bins, bin_size, scale)
 
 def procesar_dia(ruta_raiz, bin_size=5, scale=15):
     """
