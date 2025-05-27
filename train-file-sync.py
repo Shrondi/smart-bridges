@@ -16,15 +16,19 @@ def archivo_esta_abierto(path):
         return False
 
 def esperar_estabilidad(path, tiempo_espera):
-    """Espera hasta que el archivo no esté siendo escrito y permanezca estable un tiempo."""
     tiempo_inicial = time.time()
+    tamaño_anterior = -1
+
     while True:
         if not os.path.isfile(path):
             print(f"[!] Archivo no encontrado: {path}")
             return False
 
-        if archivo_esta_abierto(path):
-            tiempo_inicial = time.time()  # reinicia temporizador si está abierto
+        tamaño_actual = os.path.getsize(path)
+
+        if archivo_esta_abierto(path) or tamaño_actual != tamaño_anterior:
+            tamaño_anterior = tamaño_actual
+            tiempo_inicial = time.time()
         elif time.time() - tiempo_inicial >= tiempo_espera:
             return True
 
@@ -83,7 +87,7 @@ def procesar_existentes(args):
 
 def main():
 
-    VERSION = "1.0.0"
+    VERSION = "1.1.0"
 
     parser = argparse.ArgumentParser(description="Monitoriza una estructura de directorios con archivos CSV y los transfiere después de procesarlos.")
     
