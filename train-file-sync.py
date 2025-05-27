@@ -10,14 +10,16 @@ from check_train_file import verifyFile
 def esperar_quitar_lock(path_lock):
     """Espera indefinidamente mientras exista el archivo .lock"""
     while os.path.exists(path_lock):
+        print(f"[!] Lock {path_lock} detectado. Esperando...: ")
         time.sleep(1)
     return True
 
 def transferir_archivo(path, usuario, ip, destino_dir):
     try:
         lock_path = path + ".lock"
-        print(f"[+] Archivo .lock detectado. Esperando...: {lock_path}")
-        esperar_quitar_lock(lock_path)
+        print(f"[+] Nuevo archivo detectado: {path}")
+        if esperar_quitar_lock(lock_path):
+            print(f"[✓] Lock eliminado. Preparando...: {path}")
 
         es_anomalo, ruta_final = verifyFile(path)
         if es_anomalo:
@@ -64,7 +66,7 @@ def procesar_existentes(args):
 
 def main():
 
-    VERSION = "2.0.0"
+    VERSION = "2.0.1"
 
     parser = argparse.ArgumentParser(description="Monitoriza una estructura de directorios con archivos CSV y los transfiere después de procesarlos.")
     
