@@ -11,7 +11,7 @@ def esperar_quitar_lock(path_lock):
     """Espera indefinidamente mientras exista el archivo .lock"""
     while os.path.exists(path_lock):
         print(f"[!] Lock {path_lock} detectado. Esperando...: ")
-        time.sleep(1)
+        time.sleep(8)
     return True
 
 def transferir_archivo(path, usuario, ip, destino_dir):
@@ -66,7 +66,7 @@ def procesar_existentes(args):
 
 def main():
 
-    VERSION = "2.0.1"
+    VERSION = "2.0.2"
 
     parser = argparse.ArgumentParser(description="Monitoriza una estructura de directorios con archivos CSV y los transfiere después de procesarlos.")
     
