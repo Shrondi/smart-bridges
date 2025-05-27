@@ -2,9 +2,11 @@ import os
 import pandas as pd
 import matplotlib.pyplot as plt
 from datetime import datetime
-import time
+import calendar
+import argparse
+import threading
 
-def obtener_bins_de_sensor(ruta_sensor, bin_size=5):
+def obtener_bins_sensor(ruta_sensor, bin_size=5):
     """
     Lee los CSV de un sensor y devuelve un vector binario indicando
     si hubo evento en cada intervalo de tiempo (bin) del día.
@@ -34,11 +36,11 @@ def obtener_bins_de_sensor(ruta_sensor, bin_size=5):
                 except Exception:
                     continue
     except Exception as e:
-        print(f"Error leyendo archivos en {ruta_sensor}: {e}")
+        print(f"[x] Error leyendo archivos en {ruta_sensor}: {e}")
 
     return bins
 
-def generar_grafico_dia(path_dia, sensores_bins, bin_size=5):
+def generar_grafico(path_dia, sensores_bins, bin_size=5, scale=15):
     """
     Genera y guarda un gráfico PDF para el día, mostrando
     en el eje X el tiempo y en el eje Y los sensores con
@@ -75,7 +77,7 @@ def generar_grafico_dia(path_dia, sensores_bins, bin_size=5):
     ax.tick_params(axis='y', pad=10)
 
     # Configurar eje X (tiempo) con ticks cada 30 minutos
-    step = 15 // bin_size
+    step = scale // bin_size
     x_ticks = list(range(0, 1440 // bin_size, step))
     x_labels = [f"{(i * bin_size) // 60:02d}:{(i * bin_size) % 60:02d}" for i in x_ticks]
     ax.set_xticks(x_ticks)
@@ -83,7 +85,6 @@ def generar_grafico_dia(path_dia, sensores_bins, bin_size=5):
     
     
     # Obtener fecha y hora última modificación del directorio del día
-    timestamp_mod = os.path.getmtime(path_dia)
     fecha_mod = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
     # Añadir texto en la esquina superior derecha
@@ -98,9 +99,9 @@ def generar_grafico_dia(path_dia, sensores_bins, bin_size=5):
     plt.savefig(output_path)
     plt.close()
 
-    print(f"PDF generado: {output_path}")
+    print(f"[✔] PDF generado: {output_path}")
 
-def procesar_dia(path_dia, bin_size=5):
+def procesar_ficheros(path_dia, bin_size=5):
     """
     Procesa todos los sensores en un día, generando los bins
     de eventos y creando el gráfico si hay datos.
@@ -118,47 +119,59 @@ def procesar_dia(path_dia, bin_size=5):
         if "anomalias" in sensor.lower():
             continue  # Ignorar carpetas de anomalías
 
-        bins = obtener_bins_de_sensor(entrada.path, bin_size)
+        bins = obtener_bins_sensor(entrada.path, bin_size)
         if any(bins):
             sensores_bins[sensor] = bins
 
     if not sensores_bins:
-        print(f"Sin datos para graficar en: {path_dia}")
+        print(f"[!] Sin datos para graficar en: {path_dia}")
         return
 
-    generar_grafico_dia(path_dia, sensores_bins, bin_size)
+    generar_grafico(path_dia, sensores_bins, bin_size)
 
-def recorrer_directorios(ruta_raiz, bin_size=5):
+def procesar_dia(ruta_raiz, bin_size=5, scale=15):
     """
-    Recorre la estructura completa de directorios:
-    puente / año / mes / día / sensor
-    
-    Parámetros:
-    - ruta_raiz: ruta base donde están los puentes.
-    - bin_size: tamaño del bin en minutos.
+    Procesa en paralelo la carpeta del día actual para todos los puentes dentro de ruta_raiz.
+    Busca en: ruta_raiz / puente / año / mes_in_english / día
     """
+    fecha_actual = datetime.now()
+    año = fecha_actual.strftime('%Y')
+    dia = fecha_actual.strftime('%d')
+    mes_ingles = calendar.month_name[fecha_actual.month].lower()
+
+    hilos = []
+
     for entrada_puente in os.scandir(ruta_raiz):
         if not entrada_puente.is_dir():
             continue
-        path_puente = entrada_puente.path
 
-        for entrada_año in os.scandir(path_puente):
-            if not entrada_año.is_dir():
-                continue
-            path_año = entrada_año.path
+        path_dia = os.path.join(entrada_puente.path, año, mes_ingles, dia)
 
-            for entrada_mes in os.scandir(path_año):
-                if not entrada_mes.is_dir():
-                    continue
-                path_mes = entrada_mes.path
+        if os.path.exists(path_dia) and os.path.isdir(path_dia):
+            print(f"[+][{entrada_puente.name}] Iniciando hilo para: {path_dia}")
+            hilo = threading.Thread(target=procesar_ficheros, args=(path_dia, bin_size, scale), name=entrada_puente.name)
+            hilo.start()
+            hilos.append(hilo)
+        else:
+            print(f"[x][{entrada_puente.name}] No se encontró la carpeta del día actual: {path_dia}")
 
-                for entrada_dia in os.scandir(path_mes):
-                    if not entrada_dia.is_dir():
-                        continue
-                    path_dia = entrada_dia.path
-                    procesar_dia(path_dia, bin_size)
+    # Esperar a que terminen todos los hilos
+    for hilo in hilos:
+        hilo.join()
+
+    print("[+] Procesamiento diario finalizado.")
 
 if __name__ == '__main__':
-    ruta_base = '/srv/smartbridges/'  # Cambia por tu ruta base real
-    recorrer_directorios(ruta_base, bin_size=5)
 
+    VERSION = "1.0.0"
+
+    parser = argparse.ArgumentParser(description="Procesar y graficar los archivos de vibraciones del día actual.")
+
+    parser.add_argument('--version', action='version', version=f'%(prog)s {VERSION}')
+    parser.add_argument('--ruta_puentes', type=str, required=True, help="Ruta base que contiene la carpeta Guadiato")
+    parser.add_argument('--bin', type=int, default=5, help="Tamaño del bin en minutos (default: 5)")
+    parser.add_argument('--scale', type=int, default=15, help="Cada cuanto minutos se muestra un tick en el eje X (default: 15)")
+
+    args = parser.parse_args()
+
+    procesar_dia(args.ruta_base, args.bin_size, args.scale)
