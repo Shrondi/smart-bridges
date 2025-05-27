@@ -1,13 +1,12 @@
 import os
 import csv
 import shutil
-import sys
 from datetime import datetime
 
-def parse_timestamp(timestamp_str):
+def parseTimestamp(timestamp_str):
     return datetime.strptime(timestamp_str, "%H:%M:%S.%f")
 
-def procesar_csv(filepath):
+def processCSV(filepath):
     with open(filepath, 'r', newline='') as f:
         reader = csv.reader(f)
         next(reader, None)  # Saltar cabecera
@@ -17,7 +16,7 @@ def procesar_csv(filepath):
         except StopIteration:
             return True  # Archivo vacío o sin datos
 
-        primera_ts = parse_timestamp(primera_linea[0])
+        primera_ts = parseTimestamp(primera_linea[0])
         ultima_ts = primera_ts
         ts_anterior = primera_ts
 
@@ -25,7 +24,7 @@ def procesar_csv(filepath):
             if not row:
                 continue
 
-            ts_actual = parse_timestamp(row[0])
+            ts_actual = parseTimestamp(row[0])
             if ts_actual < ts_anterior:
                 return True
 
@@ -38,7 +37,7 @@ def procesar_csv(filepath):
 
         return False
 
-def mover_a_anomalias(filepath):
+def moveToFolder(filepath):
     carpeta_actual = os.path.dirname(filepath)
     carpeta_anomalias = os.path.join(carpeta_actual, 'anomalias')
     os.makedirs(carpeta_anomalias, exist_ok=True)
@@ -46,30 +45,26 @@ def mover_a_anomalias(filepath):
     shutil.move(filepath, destino)
     return destino
 
-def main():
-    if len(sys.argv) != 2:
-        print("Uso: python verificar_archivo.py <archivo_csv>", file=sys.stderr)
-        sys.exit(2)
+def verifyFile(filepath):
+    """
+    Verifica si un archivo CSV es anómalo.
+    Devuelve una tupla (es_anomalo: bool, ruta_final: str)
+    No procesa archivos que ya estén dentro de una carpeta 'anomalias'.
+    """
+    # Normalizar ruta para evitar problemas con separadores Windows/Linux
+    normalized_path = filepath.replace('\\', '/').lower()
 
-    ruta_csv = sys.argv[1]
+    # Si ya está en carpeta 'anomalias', no procesar
+    if '/anomalias/' in normalized_path or normalized_path.endswith('/anomalias'):
+        return True, filepath
 
-    if not os.path.isfile(ruta_csv):
-        print(f"El archivo no existe: {ruta_csv}", file=sys.stderr)
-        sys.exit(2)
+    if not os.path.isfile(filepath):
+        raise FileNotFoundError(f"Archivo no encontrado: {filepath}")
 
-    try:
-        es_anomalo = procesar_csv(ruta_csv)
-        if es_anomalo:
-            nueva_ruta = mover_a_anomalias(ruta_csv)
-            print(nueva_ruta)
-            sys.exit(1)  # Indica anómalo y movido
-        else:
-            print(ruta_csv)
-            sys.exit(0)  # Correcto, sin mover
-    except Exception as e:
-        print(f"Error al procesar {ruta_csv}: {e}", file=sys.stderr)
-        sys.exit(2)
-
-if __name__ == "__main__":
-    main()
+    es_anomalo = processCSV(filepath)
+    if es_anomalo:
+        nueva_ruta = moveToFolder(filepath)
+        return True, nueva_ruta
+    else:
+        return False, filepath
 
