@@ -174,4 +174,4 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
-    procesar_dia(args.ruta_base, args.bin_size, args.scale)
+    procesar_dia(args.ruta_puentes, args.bin_size, args.scale)
