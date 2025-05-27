@@ -7,38 +7,17 @@ from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 from check_train_file import verifyFile
 
-def archivo_esta_abierto(path):
-    """Devuelve True si el archivo está siendo usado por otro proceso."""
-    try:
-        subprocess.check_output(["lsof", path], stderr=subprocess.DEVNULL)
-        return True
-    except subprocess.CalledProcessError:
-        return False
-
-def esperar_estabilidad(path, tiempo_espera):
-    tiempo_inicial = time.time()
-    tamaño_anterior = -1
-
-    while True:
-        if not os.path.isfile(path):
-            print(f"[!] Archivo no encontrado: {path}")
-            return False
-
-        tamaño_actual = os.path.getsize(path)
-
-        if archivo_esta_abierto(path) or tamaño_actual != tamaño_anterior:
-            tamaño_anterior = tamaño_actual
-            tiempo_inicial = time.time()
-        elif time.time() - tiempo_inicial >= tiempo_espera:
-            return True
-
+def esperar_quitar_lock(path_lock):
+    """Espera indefinidamente mientras exista el archivo .lock"""
+    while os.path.exists(path_lock):
         time.sleep(1)
+    return True
 
-def transferir_archivo(path, usuario, ip, destino_dir, tiempo_espera):
+def transferir_archivo(path, usuario, ip, destino_dir):
     try:
-        print(f"[+] Esperando estabilidad de archivo: {path}")
-        if not esperar_estabilidad(path, tiempo_espera):
-            return
+        lock_path = path + ".lock"
+        print(f"[+] Archivo .lock detectado. Esperando...: {lock_path}")
+        esperar_quitar_lock(lock_path)
 
         es_anomalo, ruta_final = verifyFile(path)
         if es_anomalo:
@@ -67,8 +46,7 @@ class CSVHandler(FileSystemEventHandler):
                 event.src_path,
                 self.args.user,
                 self.args.host,
-                self.args.destination,
-                self.args.stability
+                self.args.destination
             )
 
 def procesar_existentes(args):
@@ -81,13 +59,12 @@ def procesar_existentes(args):
                     full_path,
                     args.user,
                     args.host,
-                    args.destination,
-                    args.stability
+                    args.destination
                 )
 
 def main():
 
-    VERSION = "1.1.0"
+    VERSION = "2.0.0"
 
     parser = argparse.ArgumentParser(description="Monitoriza una estructura de directorios con archivos CSV y los transfiere después de procesarlos.")
     
@@ -96,7 +73,6 @@ def main():
     parser.add_argument("--user", help="Usuario SSH del destino")
     parser.add_argument("--host", help="IP o hostname del destino")
     parser.add_argument("--destination", help="Ruta remota donde transferir los archivos")
-    parser.add_argument("--stability", type=int, default=5, help="Segundos para considerar un archivo estable (default: 5)")
     args = parser.parse_args()
 
     if not os.path.isdir(args.source):
@@ -120,4 +96,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
