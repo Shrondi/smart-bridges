@@ -5,25 +5,39 @@ import sys
 import argparse
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
-from check_train_file import verifyFile
+from check_train_file import verifyFile, moveToFolder
 
-def esperar_quitar_lock(path_lock):
-    """Espera indefinidamente mientras exista el archivo .lock"""
+def esperar_quitar_lock(path_lock, timeout=120):
+    """Espera hasta que desaparezca el .lock o se supere el timeout (en segundos)."""
+    start_time = time.time()
+    print(f"[!] Lock {path_lock} detectado. Esperando... ({int(elapsed)}s): ")
     while os.path.exists(path_lock):
-        print(f"[!] Lock {path_lock} detectado. Esperando...: ")
+        elapsed = time.time() - start_time
+        if elapsed > timeout:
+            print(f"[✗] Timeout esperando lock ({timeout}s): {path_lock}")
+            return False
         time.sleep(8)
     return True
 
 def transferir_archivo(path, usuario, ip, destino_dir):
     try:
         lock_path = path + ".lock"
-        print(f"[+] Nuevo archivo detectado: {path}")
-        if esperar_quitar_lock(lock_path):
-            print(f"[✓] Lock eliminado. Preparando...: {path}")
 
-        es_anomalo, ruta_final = verifyFile(path)
-        if es_anomalo:
-            print(f"[!] Archivo anómalo movido a: {ruta_final}")
+        print(f"[+] Nuevo archivo detectado: {path}")
+
+        if not esperar_quitar_lock(lock_path):
+
+            print(f"[✗] Archivo considerado anómalo por timeout de lock: {path}")
+            ruta_final = moveToFolder(path)
+            print(f"[!] Archivo movido a carpeta de anomalías: {ruta_final}")
+
+        else:
+            print(f"[✓] Lock eliminado. Preparando...: {path}")
+            es_anomalo, ruta_final = verifyFile(path)
+
+            if es_anomalo:
+                print(f"[!] Archivo anómalo movido a: {ruta_final}")
+
 
         print(f"[+] Enviando archivo: {ruta_final}")
         comando = [
@@ -66,7 +80,7 @@ def procesar_existentes(args):
 
 def main():
 
-    VERSION = "2.0.2"
+    VERSION = "2.1.0"
 
     parser = argparse.ArgumentParser(description="Monitoriza una estructura de directorios con archivos CSV y los transfiere después de procesarlos.")
     
