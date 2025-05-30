@@ -7,16 +7,17 @@ from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 from check_train_file import verifyFile, moveToFolder
 
-def esperar_quitar_lock(path_lock, timeout=120):
+def esperar_quitar_lock(path_lock, timeout=600): # 10 min
     """Espera hasta que desaparezca el .lock o se supere el timeout (en segundos)."""
     start_time = time.time()
-    print(f"[!] Lock {path_lock} detectado. Esperando... ({int(elapsed)}s): ")
+    print(f"[!] Lock {path_lock} detectado. Esperando...", end="")
     while os.path.exists(path_lock):
         elapsed = time.time() - start_time
+        print(f"({int(elapsed)}s)")
         if elapsed > timeout:
             print(f"[✗] Timeout esperando lock ({timeout}s): {path_lock}")
             return False
-        time.sleep(8)
+        time.sleep(10)
     return True
 
 def transferir_archivo(path, usuario, ip, destino_dir):
@@ -49,8 +50,10 @@ def transferir_archivo(path, usuario, ip, destino_dir):
             print(f"[✓] Transferencia completada: {ruta_final}")
         else:
             print(f"[ERROR] Error en transferencia: {ruta_final}")
+            sys.exit(1)
     except Exception as e:
         print(f"[ERROR] Fallo en procesamiento de {path}: {e}")
+        sys.exit(1)
 
 class CSVHandler(FileSystemEventHandler):
     def __init__(self, args):
@@ -80,7 +83,7 @@ def procesar_existentes(args):
 
 def main():
 
-    VERSION = "2.1.0"
+    VERSION = "2.1.1"
 
     parser = argparse.ArgumentParser(description="Monitoriza una estructura de directorios con archivos CSV y los transfiere después de procesarlos.")
     
