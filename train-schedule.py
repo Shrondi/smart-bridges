@@ -1,7 +1,7 @@
 import os
 import pandas as pd
 import matplotlib.pyplot as plt
-from datetime import datetime
+from datetime import datetime, timedelta
 import calendar
 import argparse
 import threading
@@ -129,15 +129,15 @@ def procesar_ficheros(path_dia, bin_size=5, scale=15):
 
     generar_grafico(path_dia, sensores_bins, bin_size, scale)
 
-def procesar_dia(ruta_raiz, bin_size=5, scale=15):
+def procesar_dia(ruta_raiz, fecha, bin_size=5, scale=15):
     """
     Procesa en paralelo la carpeta del día actual para todos los puentes dentro de ruta_raiz.
     Busca en: ruta_raiz / puente / año / mes_in_english / día
     """
-    fecha_actual = datetime.now()
-    año = fecha_actual.strftime('%Y')
-    dia = fecha_actual.strftime('%d')
-    mes_ingles = calendar.month_name[fecha_actual.month].lower()
+
+    año = fecha.strftime('%Y')
+    dia = fecha.strftime('%d')
+    mes_ingles = calendar.month_name[fecha.month].lower()
 
     hilos = []
 
@@ -159,11 +159,25 @@ def procesar_dia(ruta_raiz, bin_size=5, scale=15):
     for hilo in hilos:
         hilo.join()
 
-    print("[+] Procesamiento diario finalizado.")
+    print("[+] Procesamiento finalizado.")
+
+def procesar_fechas(ruta_raiz, bin_size=5, scale=15, hour=0, minute=15):
+    """
+    Procesa el día actual, y si son las 00:15, también procesa el día anterior.
+    """
+    ahora = datetime.now()
+    fechas = [ahora]
+
+    if ahora.hour == hour and ahora.minute == minute:
+        ayer = ahora - timedelta(days=1)
+        fechas.insert(0, ayer)  # Procesar ayer antes que hoy
+
+    for fecha in fechas:
+        procesar_dia(ruta_raiz, fecha, bin_size, scale)
 
 if __name__ == '__main__':
 
-    VERSION = "1.0.0"
+    VERSION = "1.1.0"
 
     parser = argparse.ArgumentParser(description="Procesar y graficar los archivos de vibraciones del día actual.")
 
@@ -171,7 +185,10 @@ if __name__ == '__main__':
     parser.add_argument('--ruta_puentes', type=str, required=True, help="Ruta base que contiene la carpeta Guadiato")
     parser.add_argument('--bin', type=int, default=5, help="Tamaño del bin en minutos (default: 5)")
     parser.add_argument('--scale', type=int, default=15, help="Cada cuanto minutos se muestra un tick en el eje X (default: 15)")
+    parser.add_argument('--time-yesterday', default='00:15', type=str, help="Hora (HH:MM) para procesar también el día anterior para graficar los datos restantes anteriores (default: 00:15:00)" \
+                                                                            "¡Atención! Este script esta gestionado por un .timer del sistema. Si se modifica esta flag, debe ser acorde a la hora de activación del timer.")
 
     args = parser.parse_args()
 
-    procesar_dia(args.ruta_puentes, args.bin, args.scale)
+    h_esp, m_esp = map(int, args.time_yesterday.split(':'))
+    procesar_fechas(args.ruta_puentes, args.bin, args.scale, h_esp, m_esp)
