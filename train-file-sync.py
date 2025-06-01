@@ -42,11 +42,14 @@ def transferir_archivo(path, usuario, ip, destino_dir):
             "rsync", "-avz", "-e", "ssh", "--relative", "--remove-source-files",
             ruta_final, f"{usuario}@{ip}:{destino_dir}"
         ]
-        resultado = subprocess.run(comando)
-        if resultado.returncode == 0:
-            print(f"[✓] Transferencia completada: {ruta_final}")
-        else:
-            print(f"[ERROR] Error en transferencia: {ruta_final}")
+        
+         # Ejecuta y lanza excepción si falla
+        resultado = subprocess.run(comando, check=True)
+        print(f"[✓] Transferencia completada: {ruta_final}")
+
+    except subprocess.CalledProcessError as e:
+        print(f"[ERROR] Error en transferencia: {ruta_final}: {e}")
+        raise 
     except Exception as e:
         print(f"[ERROR] Fallo en procesamiento de {path}: {e}")
         raise
@@ -95,7 +98,7 @@ def procesar_existentes(args):
 
 def main():
 
-    VERSION = "2.2.0"
+    VERSION = "2.2.1"
 
     parser = argparse.ArgumentParser(description="Monitoriza una estructura de directorios con archivos CSV y los transfiere después de procesarlos.")
     
