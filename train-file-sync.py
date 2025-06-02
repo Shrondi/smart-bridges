@@ -8,6 +8,8 @@ from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 from check_train_file import verifyFile, moveToFolder
 
+DEBOUNCE_SECONDS = 5
+
 def esperar_quitar_lock(path_lock, timeout=600):  # 10 min
     """Espera hasta que desaparezca el .lock o se supere el timeout (en segundos)."""
     start_time = time.time()
@@ -29,6 +31,7 @@ def transferir_archivo(path, usuario, ip, destino_dir):
 
         if not esperar_quitar_lock(lock_path):
             print(f"[✗] Archivo considerado anómalo por timeout de lock: {path}")
+            os.remove(lock_path) # Elimina el lock ya que el archivo es considerado no válido
             ruta_final = moveToFolder(path)
             print(f"[!] Archivo movido a carpeta de anomalías: {ruta_final}")
         else:
@@ -58,24 +61,42 @@ class CSVHandler(FileSystemEventHandler):
     def __init__(self, args, observer):
         self.args = args
         self.observer = observer
+        self._lock = threading.Lock()
+        self._archivos_pendientes = set()
+        self._timer = None
 
     def on_created(self, event):
         if not event.is_directory and event.src_path.endswith(".csv"):
-            hilo = threading.Thread(target=self.procesar_archivo, args=(event.src_path,), daemon=True)
-            hilo.start()
+            with self._lock:
+                self._archivos_pendientes.add(event.src_path)
+            self._reiniciar_timer()
 
-    def procesar_archivo(self, path):
-        try:
-            transferir_archivo(
-                path,
-                self.args.user,
-                self.args.host,
-                self.args.destination
-            )
-        except Exception as e:
-            print(f"[ERROR] Excepción en hilo procesar_archivo: {e}")
-            self.observer.stop()
-            sys.exit(1)
+    def _reiniciar_timer(self):
+        if self._timer:
+            self._timer.cancel()
+        self._timer = threading.Timer(DEBOUNCE_SECONDS, self._procesar_pendientes)
+        self._timer.daemon = True
+        self._timer.start()
+
+    def _procesar_pendientes(self):
+        with self._lock:
+            archivos = list(self._archivos_pendientes)
+            self._archivos_pendientes.clear()
+
+        print(f"[DEBOUNCE] Procesando {len(archivos)} archivo(s) tras {DEBOUNCE_SECONDS}s sin cambios...")
+
+        for path in archivos:
+            try:
+                transferir_archivo(
+                    path,
+                    self.args.user,
+                    self.args.host,
+                    self.args.destination
+                )
+            except Exception as e:
+                print(f"[ERROR] Excepción en procesamiento: {e}")
+                self.observer.stop()
+                sys.exit(1)
 
 def procesar_existentes(args):
     threads = []
@@ -98,7 +119,7 @@ def procesar_existentes(args):
 
 def main():
 
-    VERSION = "2.2.1"
+    VERSION = "2.3.0"
 
     parser = argparse.ArgumentParser(description="Monitoriza una estructura de directorios con archivos CSV y los transfiere después de procesarlos.")
     
@@ -123,7 +144,9 @@ def main():
 
     try:
         observer.join()
+        sys.exit(1)
     except KeyboardInterrupt:
+        print("\n[INFO] Interrupción detectada. Deteniendo observador...")
         observer.stop()
         observer.join()
 
