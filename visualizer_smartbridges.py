@@ -71,15 +71,12 @@ def calc_offsets(df):
 def calc_fft(df):
     """Calcula la FFT para los datos de aceleración."""
 
-    fft_data = {}
-    accelerometers = df['accelerometer'].unique()
-
-    for acc_num in accelerometers:
+    def fft_acc(acc_num):
         df_acc = df[df['accelerometer'] == acc_num]
 
         L = len(df_acc)
         if L == 0:
-            continue
+            return acc_num, None
 
         # Intervalo de muestreo (Ts) en segundos
         t = df_acc.index.to_numpy()
@@ -96,12 +93,22 @@ def calc_fft(df):
 
         frequencies = fftfreq(L, Ts)
 
-        fft_data[acc_num] = {
+        return acc_num, {
             'frequencies': frequencies[:L // 2],
             'fft_x': fft_x[:L // 2] * 2,
             'fft_y': fft_y[:L // 2] * 2,
             'fft_z': fft_z[:L // 2] * 2,
         }
+    
+    fft_data = {}
+    accelerometers = df['accelerometer'].unique()
+
+    # Paralelizar el cálculo de FFT para cada acelerómetro
+    with ThreadPoolExecutor() as executor:
+        results = executor.map(fft_acc, accelerometers)
+        for acc_num, data in results:
+            if data is not None:
+                fft_data[acc_num] = data
 
     return fft_data
 
