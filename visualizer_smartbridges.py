@@ -1,21 +1,25 @@
 # -*- coding: utf-8 -*-
 
-import pandas as pd
-import matplotlib.pyplot as plt
+import argparse
+import calendar
+import locale
+import os
+import re
+import gc
+from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime, timedelta
+import threading
+from queue import PriorityQueue
+
 import matplotlib
 matplotlib.use('Agg')  # Usar backend no interactivo (solo para escribir en archivos)
+import matplotlib.pyplot as plt
 import numpy as np
-import os
+import pandas as pd
 import seaborn as sns
 from matplotlib.backends.backend_pdf import PdfPages
 from scipy.fft import fft, fftfreq
-import argparse
-from concurrent.futures import ThreadPoolExecutor, as_completed
-import calendar
-import locale
-from datetime import datetime, timedelta
-from collections import defaultdict
-import re
 
 """# Definición funciones"""
 
@@ -324,30 +328,48 @@ def create_report(bridge_path, date, min_sensors):
         return None
 
     output_pdf = os.path.join(bridge_path, 'report', f"train_report_{date}.pdf")
+    total_groups = len(groups)
+    results = [None] * total_groups
+    condition = threading.Condition()
+    semaphore = threading.Semaphore(10)  # Limitar a 10 grupos procesados simultáneamente
 
-    # Procesar cada grupo en paralelo, pero guardar en orden
-    results = [None] * len(groups)
+    def producer(idx, group):
+        semaphore.acquire()  # Espera si hay demasiadas figuras pendientes
+        try:
+            fig = process_file_group(group, day, month_number)
+        except Exception as exc:
+            print(f"Error procesando grupo {idx}: {exc}")
+            fig = None
+        with condition:
+            results[idx] = fig
+            condition.notify_all()  # Avisar al consumidor
 
-    with ThreadPoolExecutor(max_workers=5) as executor:
-        future_to_idx = {
-            executor.submit(process_file_group, group, day, month_number): idx
-            for idx, group in enumerate(groups)
-        }
-        for future in as_completed(future_to_idx):
-            idx = future_to_idx[future]
-            try:
-                results[idx] = future.result()
-            except Exception as exc:
-                print(f"Error procesando grupo {idx}: {exc}")
-                results[idx] = None
-
-    with PdfPages(output_pdf) as pdf:
-        for fig in results:
+    def consumer(pdf):
+        for idx in range(total_groups):
+            with condition:
+                while results[idx] is None:
+                    condition.wait()
+                fig = results[idx]
             if fig is not None:
                 pdf.savefig(fig)
+                del fig
+                gc.collect()
+            print(f"Grupo {idx} procesado y guardado.")
+            semaphore.release()  # Libera espacio para que un productor pueda continuar
+
+    with PdfPages(output_pdf) as pdf:
+        consumer_thread = threading.Thread(target=consumer, args=(pdf,))
+        consumer_thread.start()
+        with ThreadPoolExecutor(max_workers=5) as executor:
+            futures = []
+            for idx, group in enumerate(groups):
+                futures.append(executor.submit(producer, idx, group))
+            # Espera a que todos los productores terminen
+            for f in futures:
+                f.result()
+        consumer_thread.join()
 
     print(f"Reporte guardado en: {output_pdf}")
-
     return output_pdf
 
 def main():
