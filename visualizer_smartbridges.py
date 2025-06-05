@@ -273,7 +273,7 @@ def group_files_by_time(sensor_files, max_diff_seconds=2):
 
     return groups
 
-def create_report(bridge_path, date, min_sensors):
+def create_report(bridge_path, date, min_sensors, workers, max_fig):
     """
     Groups accelerometer data from all sensors by timestamp (±1 second) and generates a PDF report.
 
@@ -331,7 +331,7 @@ def create_report(bridge_path, date, min_sensors):
     total_groups = len(groups)
     results = [None] * total_groups
     condition = threading.Condition()
-    semaphore = threading.Semaphore(10)  # Limitar a 10 grupos procesados simultáneamente
+    semaphore = threading.Semaphore(max_fig)  # Limitar a 7 grupos procesados simultáneamente
 
     def producer(idx, group):
         semaphore.acquire()  # Espera si hay demasiadas figuras pendientes
@@ -362,7 +362,7 @@ def create_report(bridge_path, date, min_sensors):
     with PdfPages(output_pdf) as pdf:
         consumer_thread = threading.Thread(target=consumer, args=(pdf,))
         consumer_thread.start()
-        with ThreadPoolExecutor(max_workers=5) as executor:
+        with ThreadPoolExecutor(max_workers=workers) as executor:
             futures = []
             for idx, group in enumerate(groups):
                 futures.append(executor.submit(producer, idx, group))
@@ -382,6 +382,8 @@ def main():
     parser.add_argument('--date', required=False, type=str, help='Fecha en formato YYYYMMDD')
     parser.add_argument('--version', action='version', version=f'%(prog)s {VERSION}')
     parser.add_argument('--min_sensors', type=int, default=5, help='Número mínimo de sensores para que una vibración sea válida (default: 5)')
+    parser.add_argument('--workers', type=int, default=5, help='Número de hilos para procesar archivos (default: 5)')
+    parser.add_argument('--max_fig', type=int, default=10, help='Número máximo de figuras guardadas en memoria simultaneamente (default: 10)')
 
     args = parser.parse_args()
 
@@ -391,7 +393,7 @@ def main():
         ayer = datetime.now() - timedelta(days=1)
         date_str = ayer.strftime('%Y%m%d')
 
-    output = create_report(args.bridge_path, date_str, args.min_sensors)
+    output, groups = create_report(args.bridge_path, date_str, args.min_sensors, args.workers, args.max_fig)
     if output is None:
         print("No se pudo generar el informe.")
 
