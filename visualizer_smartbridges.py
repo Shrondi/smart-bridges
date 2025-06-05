@@ -10,13 +10,12 @@ import seaborn as sns
 from matplotlib.backends.backend_pdf import PdfPages
 from scipy.fft import fft, fftfreq
 import argparse
-from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import calendar
 import locale
-from datetime import datetime
+from datetime import datetime, timedelta
 from collections import defaultdict
 import re
-from bisect import bisect_left
 
 """# Definición funciones"""
 
@@ -170,7 +169,7 @@ def plot_fft(fft_data, axes, colors):
 
     configure_axes(axes, ['FFT Aceleración X', 'FFT Aceleración Y', 'FFT Aceleración Z'], 'Frecuencia (Hz)', 'Amplitud', 'upper right')
 
-def process_file_group(file_group, pdf, day, month_number):
+def process_file_group(file_group, day, month_number):
     """
     Procesa un grupo de archivos CSV con el mismo timestamp (±1s) y genera una gráfica combinada.
 
@@ -215,10 +214,8 @@ def process_file_group(file_group, pdf, day, month_number):
     plot_train_data(combined_df, offsets, axes[:, 0], colors)
     plot_fft(fft_data, axes[:, 1], colors)
 
-    pdf.savefig(fig)
-    plt.close()
-
-    print(f"Processed group of {len(file_group)} files at {first_datetime.strftime('%H:%M:%S')}")
+    plt.close(fig)
+    return fig
 
 def parse_timestamp_from_filename(filename):
     """
@@ -272,7 +269,7 @@ def group_files_by_time(sensor_files, max_diff_seconds=2):
 
     return groups
 
-def create_report(bridge_path, date):
+def create_report(bridge_path, date, min_sensors):
     """
     Groups accelerometer data from all sensors by timestamp (±1 second) and generates a PDF report.
 
@@ -317,7 +314,10 @@ def create_report(bridge_path, date):
                 full_path = os.path.join(root, file)
                 sensor_files[sensor_name].append(full_path)
 
-    groups = group_files_by_time(sensor_files, max_diff_seconds=1)
+    groups = group_files_by_time(sensor_files)
+
+    # Filtrar grupos por número mínimo de sensores
+    groups = [group for group in groups if len(set(sensor for sensor, _ in group)) >= min_sensors]
 
     if not groups:
         print("No se encontraron archivos para procesar.")
@@ -325,25 +325,49 @@ def create_report(bridge_path, date):
 
     output_pdf = os.path.join(bridge_path, 'report', f"train_report_{date}.pdf")
 
+    # Procesar cada grupo en paralelo, pero guardar en orden
+    results = [None] * len(groups)
+
+    with ThreadPoolExecutor(max_workers=5) as executor:
+        future_to_idx = {
+            executor.submit(process_file_group, group, day, month_number): idx
+            for idx, group in enumerate(groups)
+        }
+        for future in as_completed(future_to_idx):
+            idx = future_to_idx[future]
+            try:
+                results[idx] = future.result()
+            except Exception as exc:
+                print(f"Error procesando grupo {idx}: {exc}")
+                results[idx] = None
+
     with PdfPages(output_pdf) as pdf:
-        for group in groups:
-            process_file_group(group, pdf, day, month_number)
+        for fig in results:
+            if fig is not None:
+                pdf.savefig(fig)
 
     print(f"Reporte guardado en: {output_pdf}")
 
     return output_pdf
 
 def main():
-    VERSION = "3.2.0"
+    VERSION = "4.0.0"
 
     parser = argparse.ArgumentParser(description='Generar informe PDF de acelerómetros agrupados por timestamp')
     parser.add_argument('--bridge_path', required=True, type=str, help='Ruta a la carpeta del puente')
-    parser.add_argument('--date', required=True, type=str, help='Fecha en formato YYYYMMDD')
+    parser.add_argument('--date', required=False, type=str, help='Fecha en formato YYYYMMDD')
     parser.add_argument('--version', action='version', version=f'%(prog)s {VERSION}')
+    parser.add_argument('--min_sensors', type=int, default=5, help='Número mínimo de sensores para que una vibración sea válida (default: 5)')
 
     args = parser.parse_args()
 
-    output = create_report(args.bridge_path, args.date)
+    if args.date:
+        date_str = args.date
+    else:
+        ayer = datetime.now() - timedelta(days=1)
+        date_str = ayer.strftime('%Y%m%d')
+
+    output = create_report(args.bridge_path, date_str, args.min_sensors)
     if output is None:
         print("No se pudo generar el informe.")
 
