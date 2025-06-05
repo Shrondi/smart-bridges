@@ -21,7 +21,24 @@ import seaborn as sns
 from matplotlib.backends.backend_pdf import PdfPages
 from scipy.fft import fft, fftfreq
 
-"""# Definición funciones"""
+# ====================
+#  FUNCIONES DE UTILIDAD
+# ====================
+
+def parse_timestamp_from_filename(filename):
+    """
+    Extrae la hora del nombre del archivo tipo: acceleration_12-34-56.csv
+    """
+    match = re.match(r"acceleration_(\d{2})-(\d{2})-(\d{2})\.csv", filename)
+    if match:
+        h, m, s = match.groups()
+        return datetime.strptime(f"{h}:{m}:{s}", "%H:%M:%S")
+    return None
+
+
+# ====================
+#  FUNCIONES DE CARGA Y PROCESAMIENTO DE DATOS
+# ====================
 
 def load_data(input_path):
     """Loads and processes a single CSV file."""
@@ -112,6 +129,11 @@ def calc_fft(df):
 
     return fft_data
 
+
+# ====================
+#  FUNCIONES DE VISUALIZACIÓN
+# ====================
+
 def create_color_mapping(accelerometers):
     """Crea un mapeo de colores consistente para cada acelerómetro."""
     sorted_accs = sorted(accelerometers)  # Orden fijo
@@ -180,6 +202,10 @@ def plot_fft(fft_data, axes, colors):
 
     configure_axes(axes, ['FFT Aceleración X', 'FFT Aceleración Y', 'FFT Aceleración Z'], 'Frecuencia (Hz)', 'Amplitud', 'upper right')
 
+# ====================
+#  FUNCIONES DE PROCESAMIENTO DE GRUPOS
+# ====================
+
 def process_file_group(file_group, day, month_number, train_number):
     """
     Procesa un grupo de archivos CSV con el mismo timestamp (±1s) y genera una gráfica combinada.
@@ -228,16 +254,6 @@ def process_file_group(file_group, day, month_number, train_number):
     plt.close(fig)
     return fig
 
-def parse_timestamp_from_filename(filename):
-    """
-    Extrae la hora del nombre del archivo tipo: acceleration_12-34-56.csv
-    """
-    match = re.match(r"acceleration_(\d{2})-(\d{2})-(\d{2})\.csv", filename)
-    if match:
-        h, m, s = match.groups()
-        return datetime.strptime(f"{h}:{m}:{s}", "%H:%M:%S")
-    return None
-
 def group_files_by_time(sensor_files, max_diff_seconds=2):
     """
     Agrupa archivos en grupos disjuntos por timestamp, de forma que
@@ -280,7 +296,12 @@ def group_files_by_time(sensor_files, max_diff_seconds=2):
 
     return groups
 
-def diagrama_trenes_por_hora_pdf(groups, bridge_path, date_str):
+
+# ====================
+#  FUNCIONES DE REPORTES
+# ====================
+
+def train_distribution_report(groups, bridge_path, date_str):
     horas_inicio = []
     for group in groups:
         timestamps = []
@@ -332,7 +353,7 @@ def diagrama_trenes_por_hora_pdf(groups, bridge_path, date_str):
     plt.close(fig)
     print(f"Histograma guardado en: {output_pdf}")
 
-def create_report(bridge_path, date, min_sensors, workers, max_fig):
+def create_train_report(bridge_path, date, min_sensors, workers, max_fig):
     """
     Groups accelerometer data from all sensors by timestamp (±1 second) and generates a PDF report.
 
@@ -386,7 +407,7 @@ def create_report(bridge_path, date, min_sensors, workers, max_fig):
         print("No se encontraron archivos para procesar.")
         return None
 
-    output_pdf = os.path.join(bridge_path, 'report', year, month_name, day, f"train_report_{date}.pdf")
+    output_pdf = os.path.join(bridge_path, 'report', year, month_name, day, f"create_train_report_{date}.pdf")
     os.makedirs(os.path.dirname(output_pdf), exist_ok=True)
 
     total_groups = len(groups)
@@ -453,12 +474,12 @@ def main():
         ayer = datetime.now() - timedelta(days=1)
         date_str = ayer.strftime('%Y%m%d')
 
-    output, groups = create_report(args.bridge_path, date_str, args.min_sensors, args.workers, args.max_fig)
+    output, groups = create_train_report(args.bridge_path, date_str, args.min_sensors, args.workers, args.max_fig)
     if output is None:
         print("No se pudo generar el informe.")
     else:
         print(f"Reporte guardado en: {output}")
-        diagrama_trenes_por_hora_pdf(groups, args.bridge_path, date_str)
+        train_distribution_report(groups, args.bridge_path, date_str)
 
 if __name__ == "__main__":
     main()
