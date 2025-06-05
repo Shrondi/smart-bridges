@@ -327,7 +327,9 @@ def create_report(bridge_path, date, min_sensors, workers, max_fig):
         print("No se encontraron archivos para procesar.")
         return None
 
-    output_pdf = os.path.join(bridge_path, 'report', f"train_report_{date}.pdf")
+    output_pdf = os.path.join(bridge_path, 'report', year, month_name, day, f"train_report_{date}.pdf")
+    os.makedirs(os.path.dirname(output_pdf), exist_ok=True)
+
     total_groups = len(groups)
     results = [None] * total_groups
     condition = threading.Condition()
