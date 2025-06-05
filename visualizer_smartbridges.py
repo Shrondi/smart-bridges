@@ -10,8 +10,8 @@ from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
 import threading
-from queue import PriorityQueue
 
+from matplotlib.ticker import MaxNLocator
 import matplotlib
 matplotlib.use('Agg')  # Usar backend no interactivo (solo para escribir en archivos)
 import matplotlib.pyplot as plt
@@ -280,6 +280,58 @@ def group_files_by_time(sensor_files, max_diff_seconds=2):
 
     return groups
 
+def diagrama_trenes_por_hora_pdf(groups, bridge_path, date_str):
+    horas_inicio = []
+    for group in groups:
+        timestamps = []
+        for sensor, filepath in group:
+            hora = parse_timestamp_from_filename(filepath)
+            if hora:
+                timestamps.append(hora)
+        if timestamps:
+            start_time = min(timestamps)
+            horas_inicio.append(start_time)
+
+    if not horas_inicio:
+        print("No hay datos de trenes para mostrar.")
+        return
+
+    horas = [h.hour + h.minute/60.0 for h in horas_inicio]
+    fig, ax = plt.subplots(figsize=(10, 4))
+    bins = np.arange(25)
+    counts, _, _ = ax.hist(horas, bins=bins, color='black', edgecolor='black', align='left', rwidth=0.8)
+    ax.set_xticks(range(24))
+    ax.set_xlim(0, 24)
+    ax.set_xlabel('Hora del día')
+    ax.set_ylabel('Nº de trenes')
+    fecha = f"{date_str[6:8]}/{date_str[4:6]}/{date_str[0:4]}"
+    ax.set_title(f'Train Distribution - {fecha}')
+    ax.yaxis.set_major_locator(MaxNLocator(integer=True))
+    ymax = int(np.ceil(max(counts))) if len(counts) > 0 else 1
+    for y in range(1, ymax + 1):
+        ax.axhline(y, color='gray', linestyle='dashed', linewidth=0.7, alpha=0.5)
+    plt.tight_layout()
+
+    # Parse date components
+    year = date_str[:4]
+    month_number = int(date_str[4:6])
+    day = date_str[6:]
+
+    # Si no quieres problemas con locale en otros sistemas, comenta la siguiente línea
+    try:
+        locale.setlocale(locale.LC_TIME, 'en_US.UTF-8')
+    except locale.Error:
+        pass  # Ignorar si no se puede establecer locale
+
+    month_name = calendar.month_name[month_number].lower()
+    output_pdf = os.path.join(bridge_path, 'report', year, month_name, day, f"train_distribution_{date_str}.pdf")
+    os.makedirs(os.path.dirname(output_pdf), exist_ok=True)
+
+    with PdfPages(output_pdf) as pdf:
+        pdf.savefig(fig)
+    plt.close(fig)
+    print(f"Histograma guardado en: {output_pdf}")
+
 def create_report(bridge_path, date, min_sensors, workers, max_fig):
     """
     Groups accelerometer data from all sensors by timestamp (±1 second) and generates a PDF report.
@@ -380,8 +432,7 @@ def create_report(bridge_path, date, min_sensors, workers, max_fig):
                 f.result()
         consumer_thread.join()
 
-    print(f"Reporte guardado en: {output_pdf}")
-    return output_pdf
+    return output_pdf, groups
 
 def main():
     VERSION = "4.0.0"
@@ -405,6 +456,9 @@ def main():
     output, groups = create_report(args.bridge_path, date_str, args.min_sensors, args.workers, args.max_fig)
     if output is None:
         print("No se pudo generar el informe.")
+    else:
+        print(f"Reporte guardado en: {output}")
+        diagrama_trenes_por_hora_pdf(groups, args.bridge_path, date_str)
 
 if __name__ == "__main__":
     main()
