@@ -173,7 +173,7 @@ def plot_fft(fft_data, axes, colors):
 
     configure_axes(axes, ['FFT Aceleración X', 'FFT Aceleración Y', 'FFT Aceleración Z'], 'Frecuencia (Hz)', 'Amplitud', 'upper right')
 
-def process_file_group(file_group, day, month_number):
+def process_file_group(file_group, day, month_number, train_number):
     """
     Procesa un grupo de archivos CSV con el mismo timestamp (±1s) y genera una gráfica combinada.
 
@@ -211,7 +211,7 @@ def process_file_group(file_group, day, month_number):
     fig, axes = plt.subplots(3, 2, figsize=(20, 20), gridspec_kw={'width_ratios': [3, 3]})
     first_datetime = combined_df.index[0]
 
-    figure_title = f"Train {day}/{month_number} {first_datetime.strftime('%H:%M:%S')}"
+    figure_title = f"Train {train_number + 1} - {day}/{month_number} {first_datetime.strftime('%H:%M:%S')}"
     fig.suptitle(figure_title, fontsize=20, fontweight='bold')
     fig.subplots_adjust(hspace=0.5, top=0.92)
 
@@ -336,7 +336,7 @@ def create_report(bridge_path, date, min_sensors):
     def producer(idx, group):
         semaphore.acquire()  # Espera si hay demasiadas figuras pendientes
         try:
-            fig = process_file_group(group, day, month_number)
+            fig = process_file_group(group, day, month_number, idx)
         except Exception as exc:
             print(f"Error procesando grupo {idx}: {exc}")
             fig = None
@@ -351,6 +351,8 @@ def create_report(bridge_path, date, min_sensors):
                     condition.wait()
                 fig = results[idx]
             if fig is not None:
+                # Añadir número de página en la esquina superior derecha
+                fig.text(0.97, 0.97, f"{idx+2}", ha='right', va='top', fontsize=14, fontweight='bold')
                 pdf.savefig(fig)
                 del fig
                 gc.collect()
