@@ -27,7 +27,11 @@ def obtener_bins_sensor(ruta_sensor, bin_size=5):
             if not entrada.is_file() or not entrada.name.endswith('.csv'):
                 continue
 
-            df = pd.read_csv(entrada.path)
+            df = pd.read_csv(entrada.path, sep=',', engine='c')
+            
+            if df.empty:
+                print(f"[!] El archivo {entrada.name} está vacío, se omite.")
+                continue
 
             for _, fila in df.iterrows():
                 try:
