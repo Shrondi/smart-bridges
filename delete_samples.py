@@ -19,34 +19,16 @@ def clean_by_majority_sign(df):
 
 def remove_jumps(df, threshold=0.5):
     """
-    Elimina las filas donde la diferencia absoluta entre la muestra actual y la última muestra válida
+    Elimina las filas donde la diferencia absoluta entre la muestra actual y la anterior
     en cualquiera de los ejes supera el umbral (por defecto 0.5).
-    Al encontrar un salto brusco, avanza hasta encontrar un punto que pueda considerarse 
-    válido respecto al último punto conocido como bueno.
     """
     cols = ['x_accel (g)', 'y_accel (g)', 'z_accel (g)']
-    
-    # Usamos numpy para acelerar los cálculos
-    data = df[cols].values
-    n_samples = len(data)
-    result_indices = [0]  # Siempre incluimos la primera muestra
-    last_good_idx = 0
-    
-    # Pre-extraemos el último punto bueno para evitar accesos repetidos al DataFrame
-    last_good_point = data[last_good_idx]
-    
-    for i in range(1, n_samples):
-        # Cálculo vectorizado de diferencias
-        diffs = np.abs(data[i] - last_good_point)
-        
-        # Si todas las diferencias están dentro del umbral
-        if np.all(diffs <= threshold):
-            result_indices.append(i)
-            last_good_idx = i
-            last_good_point = data[i]  # Actualizamos el punto de referencia
-    
-    # Devolvemos solo las filas que pasaron el filtro
-    return df.iloc[result_indices].reset_index(drop=True)
+    # Calcular la diferencia absoluta con la fila anterior
+    diff = df[cols].diff().abs()
+    # Mantener la primera fila y aquellas donde ninguna diferencia supera el umbral
+    mask = (diff <= threshold).all(axis=1)
+    mask.iloc[0] = True  # Mantener la primera muestra
+    return df[mask].reset_index(drop=True)
 
 def process_file(file):
     """
