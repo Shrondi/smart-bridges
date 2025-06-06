@@ -21,14 +21,24 @@ def remove_jumps(df, threshold=0.5):
     """
     Elimina las filas donde la diferencia absoluta entre la muestra actual y la anterior
     en cualquiera de los ejes supera el umbral (por defecto 0.5).
+    Al encontrar un salto brusco, avanza hasta encontrar un punto que pueda considerarse 
+    válido respecto al último punto conocido como bueno.
     """
     cols = ['x_accel (g)', 'y_accel (g)', 'z_accel (g)']
-    # Calcular la diferencia absoluta con la fila anterior
-    diff = df[cols].diff().abs()
-    # Mantener la primera fila y aquellas donde ninguna diferencia supera el umbral
-    mask = (diff <= threshold).all(axis=1)
-    mask.iloc[0] = True  # Mantener la primera muestra
-    return df[mask].reset_index(drop=True)
+    result_indices = []
+    last_good_idx = 0
+    result_indices.append(last_good_idx)  # Siempre incluimos la primera muestra
+    
+    for i in range(1, len(df)):
+        # Comparamos con el último punto válido, no necesariamente el anterior
+        diffs = abs(df.loc[i, cols] - df.loc[last_good_idx, cols])
+        # Si todas las diferencias están dentro del umbral, consideramos esta muestra válida
+        if all(diffs <= threshold):
+            result_indices.append(i)
+            last_good_idx = i  # Actualizamos el último punto de referencia
+    
+    # Devolvemos solo las filas que pasaron el filtro
+    return df.iloc[result_indices].reset_index(drop=True)
 
 def process_file(file):
     """
