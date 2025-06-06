@@ -24,7 +24,7 @@ from PyPDF2 import PdfReader, PdfWriter
 import io
 
 # ====================
-#  FUNCIONES DE UTILIDAD
+#  FUNCIONES AUXILIARES DE RUTAS Y FECHAS
 # ====================
 
 def parse_timestamp_from_filename(filename):
@@ -37,6 +37,33 @@ def parse_timestamp_from_filename(filename):
         return datetime.strptime(f"{h}:{m}:{s}", "%H:%M:%S")
     return None
 
+def get_date(date_str):
+    """
+    Devuelve (year, month_number, day, month_name) a partir de una fecha YYYYMMDD.
+    """
+    year = date_str[:4]
+    month_number = int(date_str[4:6])
+    day = date_str[6:]
+    try:
+        locale.setlocale(locale.LC_TIME, 'en_US.UTF-8')
+    except locale.Error:
+        pass
+    month_name = calendar.month_name[month_number].lower()
+    return year, month_name, month_number, day
+
+def get_report_folder_path(bridge_path, date_str):
+    """Genera la ruta al archivo PDF de salida."""
+    year, month_name, _, day = get_date(date_str)
+    return os.path.join(bridge_path, 'report', year, month_name, day, f"create_train_report_{date_str}.pdf")
+
+def get_raw_folder_path(bridge_path, date_str):
+    """Genera la ruta a la carpeta de datos para una fecha específica."""
+    year, month_name, _, day = get_date(date_str)
+    return os.path.join(bridge_path, year, month_name, day)
+
+def validate_hora_format(hora):
+    """Valida que la hora tenga formato HH:MM:SS"""
+    return bool(re.match(r"^\d{2}:\d{2}:\d{2}$", hora))
 
 # ====================
 #  FUNCIONES DE CARGA Y PROCESAMIENTO DE DATOS
@@ -210,14 +237,21 @@ def plot_fft(fft_data, axes, colors):
 #  FUNCIONES DE PROCESAMIENTO DE GRUPOS
 # ====================
 
-def process_file_group(file_group, day, month_number, train_number):
+def process_file_group(file_group, str_date, train_number):
     """
-    Procesa un grupo de archivos CSV con el mismo timestamp (±1s) y genera una gráfica combinada.
+    Procesa un grupo de archivos CSV con el mismo timestamp (± segundos) y genera una gráfica combinada.
 
     Args:
         file_group: Lista de tuplas (sensor_name, filepath)
-        pdf: Objeto PdfPages donde guardar la gráfica.
+        day: Día del mes
+        month_number: Número del mes
+        train_number: Identificador del tren
+
+    Returns:
+        fig: Figura de matplotlib con la gráfica generada
     """
+
+    _, _, month_number, day = get_date(str_date)
     combined_df = pd.DataFrame()
 
     for sensor, filepath in file_group:
@@ -257,6 +291,23 @@ def process_file_group(file_group, day, month_number, train_number):
 
     plt.close(fig)
     return fig
+
+# ====================
+#  FUNCIONES DE PROCESAMIENTO DE GRUPOS Y ARCHIVOS
+# ====================
+
+def get_acceleration_files(raw_folder_path):
+    """Recupera los archivos de los sensores, excluyendo anomalías."""
+    sensor_files = defaultdict(list)
+    for root, dirs, files in os.walk(raw_folder_path):
+        if 'anomalias' in dirs:
+            dirs.remove('anomalias')
+        for file in files:
+            if file.endswith('.csv'):
+                sensor_name = os.path.basename(root)
+                full_path = os.path.join(root, file)
+                sensor_files[sensor_name].append(full_path)
+    return sensor_files
 
 def group_files_by_time(sensor_files, max_diff_seconds=2):
     """
@@ -300,62 +351,29 @@ def group_files_by_time(sensor_files, max_diff_seconds=2):
 
     return groups
 
+def get_groups(sensor_files, min_sensors):
+    """Obtiene grupos que cumplen con el mínimo de sensores requeridos."""
+    groups = group_files_by_time(sensor_files)
+    return [group for group in groups if len(set(sensor for sensor, _ in group)) >= min_sensors]
+
+def get_group_index_by_hora(groups, hora_buscar):
+    """Busca el índice del grupo que coincide con una hora específica."""
+    for idx, group in enumerate(groups):
+        timestamps = []
+        for sensor, filepath in group:
+            hora = parse_timestamp_from_filename(os.path.basename(filepath))
+            if hora:
+                timestamps.append(hora)
+        if timestamps:
+            start_time = min(timestamps).strftime("%H:%M:%S")
+            print(f"[Depuración] Grupo {idx}: hora de inicio = {start_time}")
+            if start_time == hora_buscar:
+                return idx
+    return None
 
 # ====================
 #  FUNCIONES DE REPORTES
 # ====================
-
-def train_distribution_report(groups, bridge_path, date_str):
-    horas_inicio = []
-    for group in groups:
-        timestamps = []
-        for sensor, filepath in group:
-            hora = parse_timestamp_from_filename(filepath)
-            if hora:
-                timestamps.append(hora)
-        if timestamps:
-            start_time = min(timestamps)
-            horas_inicio.append(start_time)
-
-    if not horas_inicio:
-        print("No hay datos de trenes para mostrar.")
-        return
-
-    horas = [h.hour + h.minute/60.0 for h in horas_inicio]
-    fig, ax = plt.subplots(figsize=(10, 4))
-    bins = np.arange(25)
-    counts, _, _ = ax.hist(horas, bins=bins, color='black', edgecolor='black', align='left', rwidth=0.8)
-    ax.set_xticks(range(24))
-    ax.set_xlim(0, 24)
-    ax.set_xlabel('Hora del día')
-    ax.set_ylabel('Nº de trenes')
-    fecha = f"{date_str[6:8]}/{date_str[4:6]}/{date_str[0:4]}"
-    ax.set_title(f'Train Distribution - {fecha}')
-    ax.yaxis.set_major_locator(MaxNLocator(integer=True))
-    ymax = int(np.ceil(max(counts))) if len(counts) > 0 else 1
-    for y in range(1, ymax + 1):
-        ax.axhline(y, color='gray', linestyle='dashed', linewidth=0.7, alpha=0.5)
-    plt.tight_layout()
-
-    # Parse date components
-    year = date_str[:4]
-    month_number = int(date_str[4:6])
-    day = date_str[6:]
-
-    # Si no quieres problemas con locale en otros sistemas, comenta la siguiente línea
-    try:
-        locale.setlocale(locale.LC_TIME, 'en_US.UTF-8')
-    except locale.Error:
-        pass  # Ignorar si no se puede establecer locale
-
-    month_name = calendar.month_name[month_number].lower()
-    output_pdf = os.path.join(bridge_path, 'report', year, month_name, day, f"train_distribution_{date_str}.pdf")
-    os.makedirs(os.path.dirname(output_pdf), exist_ok=True)
-
-    with PdfPages(output_pdf) as pdf:
-        pdf.savefig(fig)
-    plt.close(fig)
-    print(f"Histograma guardado en: {output_pdf}")
 
 def create_train_report(bridge_path, date, min_sensors, workers, max_fig):
     """
@@ -369,49 +387,23 @@ def create_train_report(bridge_path, date, min_sensors, workers, max_fig):
         str: Path to the generated PDF report, or None if input folder is invalid.
     """
 
-    # Parse date components
-    year = date[:4]
-    month_number = int(date[4:6])
-    day = date[6:]
-
-    # Si no quieres problemas con locale en otros sistemas, comenta la siguiente línea
-    try:
-        locale.setlocale(locale.LC_TIME, 'en_US.UTF-8')
-    except locale.Error:
-        pass  # Ignorar si no se puede establecer locale
-
-    month_name = calendar.month_name[month_number].lower()
-
     # Construimos la ruta con la estructura Bridge/year/month_name/day
-    date_folder_path = os.path.join(bridge_path, year, month_name, day)
+    raw_folder_path = get_raw_folder_path(bridge_path, date)
 
-    if not os.path.isdir(date_folder_path):
-        print(f"Ruta no encontrada: {date_folder_path}")
+    if not os.path.isdir(raw_folder_path):
+        print(f"Ruta no encontrada: {raw_folder_path}")
         return None
 
     # Recopilar archivos csv para cada sensor
-    sensor_files = defaultdict(list)
+    sensor_files = get_acceleration_files(raw_folder_path)
 
-    for root, dirs, files in os.walk(date_folder_path):
-        if 'anomalias' in dirs:
-            dirs.remove('anomalias')
-
-        for file in files:
-            if file.endswith('.csv'):
-                sensor_name = os.path.basename(root)
-                full_path = os.path.join(root, file)
-                sensor_files[sensor_name].append(full_path)
-
-    groups = group_files_by_time(sensor_files)
-
-    # Filtrar grupos por número mínimo de sensores
-    groups = [group for group in groups if len(set(sensor for sensor, _ in group)) >= min_sensors]
+    groups = get_groups(sensor_files, min_sensors)
 
     if not groups:
         print("No se encontraron archivos para procesar.")
         return None
 
-    output_pdf = os.path.join(bridge_path, 'report', year, month_name, day, f"create_train_report_{date}.pdf")
+    output_pdf = get_report_folder_path(bridge_path, date)
     os.makedirs(os.path.dirname(output_pdf), exist_ok=True)
 
     total_groups = len(groups)
@@ -422,7 +414,7 @@ def create_train_report(bridge_path, date, min_sensors, workers, max_fig):
     def producer(idx, group):
         semaphore.acquire()  # Espera si hay demasiadas figuras pendientes
         try:
-            fig = process_file_group(group, day, month_number, idx)
+            fig = process_file_group(group, date, idx)
         except Exception as exc:
             print(f"Error procesando grupo {idx}: {exc}")
             fig = None
@@ -538,7 +530,6 @@ def main():
             return
             
         print(f"Reporte guardado en: {output}")
-        train_distribution_report(groups, args.bridge_path, date_str)
 
 if __name__ == "__main__":
     main()
