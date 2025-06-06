@@ -1,6 +1,7 @@
 import os
 import pandas as pd
 import matplotlib.pyplot as plt
+matplotlib.use('Agg')  # Evitar problemas con entornos sin display
 from datetime import datetime, timedelta
 import calendar
 import argparse
@@ -118,7 +119,7 @@ def procesar_ficheros(path_dia, bin_size=5, scale=15):
         sensor = entrada.name
         if "anomalias" in sensor.lower():
             continue  # Ignorar carpetas de anomalías
-
+        print(f"[+] Procesando: {sensor} en {entrada.path}")
         bins = obtener_bins_sensor(entrada.path, bin_size)
         if any(bins):
             sensores_bins[sensor] = bins
@@ -173,11 +174,12 @@ def procesar_fechas(ruta_raiz, bin_size=5, scale=15, hour=0, minute=15):
         fechas.insert(0, ayer)  # Procesar ayer antes que hoy
 
     for fecha in fechas:
+        print(f"[+] Procesando fecha: {fecha.strftime('%Y-%m-%d')}")
         procesar_dia(ruta_raiz, fecha, bin_size, scale)
 
 if __name__ == '__main__':
 
-    VERSION = "1.1.0"
+    VERSION = "1.2.0"
 
     parser = argparse.ArgumentParser(description="Procesar y graficar los archivos de vibraciones del día actual.")
 
