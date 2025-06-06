@@ -19,23 +19,31 @@ def clean_by_majority_sign(df):
 
 def remove_jumps(df, threshold=0.5):
     """
-    Elimina las filas donde la diferencia absoluta entre la muestra actual y la anterior
+    Elimina las filas donde la diferencia absoluta entre la muestra actual y la última muestra válida
     en cualquiera de los ejes supera el umbral (por defecto 0.5).
     Al encontrar un salto brusco, avanza hasta encontrar un punto que pueda considerarse 
     válido respecto al último punto conocido como bueno.
     """
     cols = ['x_accel (g)', 'y_accel (g)', 'z_accel (g)']
-    result_indices = []
-    last_good_idx = 0
-    result_indices.append(last_good_idx)  # Siempre incluimos la primera muestra
     
-    for i in range(1, len(df)):
-        # Comparamos con el último punto válido, no necesariamente el anterior
-        diffs = abs(df.loc[i, cols] - df.loc[last_good_idx, cols])
-        # Si todas las diferencias están dentro del umbral, consideramos esta muestra válida
-        if all(diffs <= threshold):
+    # Usamos numpy para acelerar los cálculos
+    data = df[cols].values
+    n_samples = len(data)
+    result_indices = [0]  # Siempre incluimos la primera muestra
+    last_good_idx = 0
+    
+    # Pre-extraemos el último punto bueno para evitar accesos repetidos al DataFrame
+    last_good_point = data[last_good_idx]
+    
+    for i in range(1, n_samples):
+        # Cálculo vectorizado de diferencias
+        diffs = np.abs(data[i] - last_good_point)
+        
+        # Si todas las diferencias están dentro del umbral
+        if np.all(diffs <= threshold):
             result_indices.append(i)
-            last_good_idx = i  # Actualizamos el último punto de referencia
+            last_good_idx = i
+            last_good_point = data[i]  # Actualizamos el punto de referencia
     
     # Devolvemos solo las filas que pasaron el filtro
     return df.iloc[result_indices].reset_index(drop=True)
