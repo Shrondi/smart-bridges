@@ -7,7 +7,7 @@ import os
 import re
 import gc
 from collections import defaultdict
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
 from datetime import datetime, timedelta
 import threading
 
@@ -85,48 +85,50 @@ def calc_offsets(df):
 
     return offsets
 
+
+def fft_acc(args):
+    acc_num, df = args
+    df_acc = df[df['accelerometer'] == acc_num]
+
+    L = len(df_acc)
+    if L == 0:
+        return acc_num, None
+
+    # Intervalo de muestreo (Ts) en segundos
+    t = df_acc.index.to_numpy()
+    t = (t - t[0]) / np.timedelta64(1, 's')
+    Ts = np.mean(np.diff(t))
+
+    # FFT con todos los núcleos (-1)
+    fft_x = fft(df_acc['x'].values, workers=-1)
+    fft_y = fft(df_acc['y'].values, workers=-1)
+    fft_z = fft(df_acc['z'].values, workers=-1)
+
+    # Eliminar componente DC de Z
+    fft_z[0] = 0
+
+    frequencies = fftfreq(L, Ts)
+
+    return acc_num, {
+        'frequencies': frequencies[:L // 2],
+        'fft_x': fft_x[:L // 2] * 2,
+        'fft_y': fft_y[:L // 2] * 2,
+        'fft_z': fft_z[:L // 2] * 2,
+    }
+
 def calc_fft(df):
-    """Calcula la FFT para los datos de aceleración."""
-
-    def fft_acc(acc_num):
-        df_acc = df[df['accelerometer'] == acc_num]
-
-        L = len(df_acc)
-        if L == 0:
-            return acc_num, None
-
-        # Intervalo de muestreo (Ts) en segundos
-        t = df_acc.index.to_numpy()
-        t = (t - t[0]) / np.timedelta64(1, 's')
-        Ts = np.mean(np.diff(t))
-
-        # FFT con todos los núcleos (-1)
-        fft_x = fft(df_acc['x'].values, workers=-1)
-        fft_y = fft(df_acc['y'].values, workers=-1)
-        fft_z = fft(df_acc['z'].values, workers=-1)
-
-        # Eliminar componente DC de Z
-        fft_z[0] = 0
-
-        frequencies = fftfreq(L, Ts)
-
-        return acc_num, {
-            'frequencies': frequencies[:L // 2],
-            'fft_x': fft_x[:L // 2] * 2,
-            'fft_y': fft_y[:L // 2] * 2,
-            'fft_z': fft_z[:L // 2] * 2,
-        }
-    
     fft_data = {}
     accelerometers = df['accelerometer'].unique()
 
-    # Paralelizar el cálculo de FFT para cada acelerómetro
-    with ThreadPoolExecutor() as executor:
-        results = executor.map(fft_acc, accelerometers)
+    # Empaquetar argumentos para pasar el DataFrame a cada proceso
+    args = [(acc_num, df) for acc_num in accelerometers]
+
+    with ProcessPoolExecutor(max_workers=None) as executor:
+        results = executor.map(fft_acc, args)
         for acc_num, data in results:
             if data is not None:
                 fft_data[acc_num] = data
-
+                
     return fft_data
 
 
