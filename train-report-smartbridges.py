@@ -20,6 +20,8 @@ import pandas as pd
 import seaborn as sns
 from matplotlib.backends.backend_pdf import PdfPages
 from scipy.fft import fft, fftfreq
+from PyPDF2 import PdfReader, PdfWriter
+import io
 
 # ====================
 #  FUNCIONES DE UTILIDAD
@@ -455,10 +457,55 @@ def create_train_report(bridge_path, date, min_sensors, workers, max_fig):
                 f.result()
         consumer_thread.join()
 
-    return output_pdf, groups
+    return output_pdf
+
+def regenerate_train_report_page(bridge_path, date_str, train_date,  min_sensors):
+    """
+    Regenera solo la página de un grupo específico en el PDF del informe.
+    """
+
+    raw_folder_path = get_raw_folder_path(bridge_path, date_str)
+    output_pdf = get_report_folder_path(bridge_path, date_str)
+
+    if not os.path.isfile(output_pdf):
+        print(f"El archivo PDF no existe: {output_pdf}")
+        return
+
+    # Recopilar archivos csv para cada sensor
+    sensor_files = get_acceleration_files(raw_folder_path)
+    groups = get_groups(sensor_files, min_sensors)
+
+    group_index = get_group_index_by_hora(groups, train_date)
+    print(f"[Regenerar] Índice de grupo encontrado: {group_index}")
+
+    if group_index < 0 or group_index >= len(groups):
+        print(f"Índice de grupo fuera de rango: {group_index}")
+        return
+
+    print(f"[Regenerar] Regenerando solo el grupo {group_index} en la página {group_index+1}")
+    fig = process_file_group(groups[group_index], date_str, group_index)
+    regenerate_pdf_page(output_pdf, fig, group_index)
+
+def regenerate_pdf_page(output_pdf, fig, page_index):
+    reader = PdfReader(output_pdf)
+    writer = PdfWriter()
+    for i in range(len(reader.pages)):
+        if i == page_index:
+            buf = io.BytesIO()
+            fig.savefig(buf, format='pdf')
+            buf.seek(0)
+            new_reader = PdfReader(buf)
+            writer.add_page(new_reader.pages[0])
+            buf.close()
+        else:
+            writer.add_page(reader.pages[i])
+    with open(output_pdf, "wb") as f:
+        writer.write(f)
+    print(f"Página {page_index+1} del PDF regenerada correctamente.")
 
 def main():
-    VERSION = "4.0.0"
+    """Función principal que maneja la lógica de generación o regeneración de informes."""
+    VERSION = "5.0.0"
 
     parser = argparse.ArgumentParser(description='Generar informe PDF de acelerómetros agrupados por timestamp')
     parser.add_argument('--bridge_path', required=True, type=str, help='Ruta a la carpeta del puente')
@@ -467,19 +514,29 @@ def main():
     parser.add_argument('--min_sensors', type=int, default=5, help='Número mínimo de sensores para que una vibración sea válida (default: 5)')
     parser.add_argument('--workers', type=int, default=5, help='Número de hilos para procesar archivos (default: 5)')
     parser.add_argument('--max_fig', type=int, default=10, help='Número máximo de figuras guardadas en memoria simultaneamente (default: 10)')
-
+    parser.add_argument('--regenerar-hora', type=str, default=None, help='Hora de inicio del tren a regenerar (formato HH:MM:SS)')
+    
     args = parser.parse_args()
 
-    if args.date:
-        date_str = args.date
+    # Establecer fecha: usar la proporcionada o el día anterior por defecto
+    date_str = args.date if args.date else (datetime.now() - timedelta(days=1)).strftime('%Y%m%d')
+    
+    # Modo regeneración: regenerar solo una página del informe
+    if args.regenerar_hora:
+        if not validate_hora_format(args.regenerar_hora):
+            print("El formato de la hora debe ser HH:MM:SS")
+            return
+            
+        # Regenerar la página
+        regenerate_train_report_page(args.bridge_path, date_str, args.regenerar_hora, args.min_sensors)
     else:
-        ayer = datetime.now() - timedelta(days=1)
-        date_str = ayer.strftime('%Y%m%d')
-
-    output, groups = create_train_report(args.bridge_path, date_str, args.min_sensors, args.workers, args.max_fig)
-    if output is None:
-        print("No se pudo generar el informe.")
-    else:
+        # Modo normal: generar informe completo
+        output = create_train_report(args.bridge_path, date_str, args.min_sensors, args.workers, args.max_fig)
+        
+        if output is None:
+            print("No se pudo generar el informe.")
+            return
+            
         print(f"Reporte guardado en: {output}")
         train_distribution_report(groups, args.bridge_path, date_str)
 
