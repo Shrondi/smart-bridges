@@ -1,6 +1,7 @@
 import os
 import pandas as pd
 import matplotlib.pyplot as plt
+import matplotlib
 matplotlib.use('Agg')  # Evitar problemas con entornos sin display
 from datetime import datetime, timedelta
 import calendar
