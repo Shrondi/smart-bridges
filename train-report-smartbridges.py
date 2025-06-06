@@ -506,7 +506,7 @@ def main():
     parser.add_argument('--min_sensors', type=int, default=5, help='Número mínimo de sensores para que una vibración sea válida (default: 5)')
     parser.add_argument('--workers', type=int, default=5, help='Número de hilos para procesar archivos (default: 5)')
     parser.add_argument('--max_fig', type=int, default=10, help='Número máximo de figuras guardadas en memoria simultaneamente (default: 10)')
-    parser.add_argument('--regenerar-hora', type=str, default=None, help='Hora de inicio del tren a regenerar (formato HH:MM:SS)')
+    parser.add_argument('--regenerar-hora', type=str, nargs='+', default=None, help='Hora de inicio del tren a regenerar (formato HH:MM:SS)')
     
     args = parser.parse_args()
 
@@ -515,12 +515,15 @@ def main():
     
     # Modo regeneración: regenerar solo una página del informe
     if args.regenerar_hora:
-        if not validate_hora_format(args.regenerar_hora):
-            print("El formato de la hora debe ser HH:MM:SS")
-            return
             
-        # Regenerar la página
-        regenerate_train_report_page(args.bridge_path, date_str, args.regenerar_hora, args.min_sensors)
+       # Procesar cada hora indicada
+        for hora in args.regenerar_hora:
+            if not validate_hora_format(hora):
+                print("El formato de la hora debe ser HH:MM:SS")
+                return
+            print(f"\n[INFO] Procesando regeneración para la hora: {hora}")
+            # Regenerar la página correspondiente a esta hora
+            regenerate_train_report_page(args.bridge_path, date_str, hora, args.min_sensors)
     else:
         # Modo normal: generar informe completo
         output = create_train_report(args.bridge_path, date_str, args.min_sensors, args.workers, args.max_fig)
