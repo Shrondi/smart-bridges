@@ -4,6 +4,7 @@ import time
 import sys
 import argparse
 import threading
+from delete_samples import process_file
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 from check_train_file import verifyFile, moveToFolder
@@ -39,7 +40,8 @@ def transferir_archivo(path, usuario, ip, destino_dir):
             es_anomalo, ruta_final = verifyFile(path)
             if es_anomalo:
                 print(f"[!] Archivo anómalo movido a: {ruta_final}")
-
+        
+        process_file(ruta_final)
         print(f"[+] Enviando archivo: {ruta_final}")
         comando = [
             "rsync", "-avz", "-e", "ssh", "--relative", "--remove-source-files",
