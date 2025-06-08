@@ -52,7 +52,7 @@ def get_date(date_str):
 def get_report_folder_path(bridge_path, date_str):
     """Genera la ruta al archivo PDF de salida."""
     year, month_name, _, day = get_date(date_str)
-    return os.path.join(bridge_path, 'report', year, month_name, day, f"create_train_report_{date_str}.pdf")
+    return os.path.join(bridge_path, 'report', year, month_name, day, f"train_report_{date_str}.pdf")
 
 def get_raw_folder_path(bridge_path, date_str):
     """Genera la ruta a la carpeta de datos para una fecha específica."""
