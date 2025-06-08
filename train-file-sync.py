@@ -11,17 +11,23 @@ from check_train_file import verifyFile, moveToFolder
 
 DEBOUNCE_SECONDS = 5
 
-def esperar_quitar_lock(path_lock, timeout=600):  # 10 min
+def esperar_quitar_lock(path_lock, timeout=1200):  # 20 min
     """Espera hasta que desaparezca el .lock o se supere el timeout (en segundos)."""
     start_time = time.time()
-    print(f"[!] Lock {path_lock} detectado. Esperando...", end="")
+    print(f"[!] Lock {path_lock} detectado")
     while os.path.exists(path_lock):
         elapsed = time.time() - start_time
-        print(f"({int(elapsed)}s)")
+        print(f"[!] Esperando {elapsed:.2f}s: {path_lock}")
         if elapsed > timeout:
             print(f"[✗] Timeout esperando lock ({timeout}s): {path_lock}")
             return False
-        time.sleep(10)
+        
+        if elapsed == timeout/2:
+            print(f"[!] Lock {path_lock} ha estado presente por más de {timeout/2} minutos... Cambiando comprobación cada 2 minutos")
+            time.sleep(120)
+        else:
+            time.sleep(10)  # Espera 10 segundos antes de volver a comprobar
+
     return True
 
 def transferir_archivo(path, usuario, ip, destino_dir):
@@ -31,15 +37,15 @@ def transferir_archivo(path, usuario, ip, destino_dir):
         print(f"[+] Nuevo archivo detectado: {path}")
 
         if not esperar_quitar_lock(lock_path):
-            print(f"[✗] Archivo considerado anómalo por timeout de lock: {path}")
-            os.remove(lock_path) # Elimina el lock ya que el archivo es considerado no válido
-            ruta_final = moveToFolder(path)
-            print(f"[!] Archivo movido a carpeta de anomalías: {ruta_final}")
+            print(f"[✗] Archivo {path} ha superado el timeout de espera para del lock")
+            os.remove(lock_path) # Eliminar el lock si ha superado el timeout
         else:
             print(f"[✓] Lock eliminado. Preparando...: {path}")
-            es_anomalo, ruta_final = verifyFile(path)
-            if es_anomalo:
-                print(f"[!] Archivo anómalo movido a: {ruta_final}")
+
+        # Verifica si el archivo es anómalo y lo mueve si es necesario
+        es_anomalo, ruta_final = verifyFile(path)
+        if es_anomalo:
+            print(f"[!] Archivo anómalo movido a: {ruta_final}")
         
         process_file(ruta_final)
         print(f"[+] Enviando archivo: {ruta_final}")
@@ -121,7 +127,7 @@ def procesar_existentes(args):
 
 def main():
 
-    VERSION = "2.3.0"
+    VERSION = "2.4.0"
 
     parser = argparse.ArgumentParser(description="Monitoriza una estructura de directorios con archivos CSV y los transfiere después de procesarlos.")
     
