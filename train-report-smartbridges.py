@@ -5,23 +5,20 @@ import calendar
 import locale
 import os
 import re
-import gc
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
 from datetime import datetime, timedelta
-import threading
 
-from matplotlib.ticker import MaxNLocator
 import matplotlib
 matplotlib.use('Agg')  # Usar backend no interactivo (solo para escribir en archivos)
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
-from matplotlib.backends.backend_pdf import PdfPages
 from scipy.fft import fft, fftfreq
 from PyPDF2 import PdfReader, PdfWriter
 import io
+import tempfile
 
 # ====================
 #  FUNCIONES AUXILIARES DE RUTAS Y FECHAS
@@ -375,28 +372,25 @@ def get_group_index_by_hora(groups, hora_buscar):
 #  FUNCIONES DE REPORTES
 # ====================
 
-def create_train_report(bridge_path, date, min_sensors, workers, max_fig):
+def create_train_report(bridge_path, date, min_sensors, workers):
     """
-    Groups accelerometer data from all sensors by timestamp (±1 second) and generates a PDF report.
-
+    Crea un informe PDF con los datos de acelerómetros agrupados por timestamp.
     Args:
-        bridge_path (str): Path to the bridge directory.
-        date (str): A string like '20250522'.
-
+        bridge_path: Ruta al directorio del puente
+        date: Fecha en formato YYYYMMDD
+        min_sensors: Número mínimo de sensores para que una vibración sea válida
+        workers: Número de hilos para procesar archivos
+        max_fig: Número máximo de figuras guardadas en memoria simultáneamente
     Returns:
-        str: Path to the generated PDF report, or None if input folder is invalid.
+        Ruta al archivo PDF generado, o None si hubo un error.
     """
-
-    # Construimos la ruta con la estructura Bridge/year/month_name/day
     raw_folder_path = get_raw_folder_path(bridge_path, date)
 
     if not os.path.isdir(raw_folder_path):
         print(f"Ruta no encontrada: {raw_folder_path}")
         return None
 
-    # Recopilar archivos csv para cada sensor
     sensor_files = get_acceleration_files(raw_folder_path)
-
     groups = get_groups(sensor_files, min_sensors)
 
     if not groups:
@@ -407,48 +401,51 @@ def create_train_report(bridge_path, date, min_sensors, workers, max_fig):
     os.makedirs(os.path.dirname(output_pdf), exist_ok=True)
 
     total_groups = len(groups)
-    results = [None] * total_groups
-    condition = threading.Condition()
-    semaphore = threading.Semaphore(max_fig)  # Limitar a 7 grupos procesados simultáneamente
+    temp_files = [None] * total_groups
 
     def producer(idx, group):
-        semaphore.acquire()  # Espera si hay demasiadas figuras pendientes
         try:
             fig = process_file_group(group, date, idx)
+            if fig is not None:
+                # Archivo oculto, comprimido, en el directorio temporal del sistema
+                tmp = tempfile.NamedTemporaryFile(
+                    dir=tempfile.gettempdir(),
+                    prefix='.report_temp_',
+                    suffix='.pdf',
+                    delete=False
+                )
+                fig.savefig(tmp.name, format='pdf')
+                tmp.close()
+                temp_files[idx] = tmp.name
+                plt.close(fig)
+            print(f"Grupo {idx} procesado y guardado temporalmente.")
         except Exception as exc:
             print(f"Error procesando grupo {idx}: {exc}")
-            fig = None
-        with condition:
-            results[idx] = fig
-            condition.notify_all()  # Avisar al consumidor
+            temp_files[idx] = None
 
-    def consumer(pdf):
-        for idx in range(total_groups):
-            with condition:
-                while results[idx] is None:
-                    condition.wait()
-                fig = results[idx]
-            if fig is not None:
-                # Añadir número de página en la esquina superior derecha
-                fig.text(0.97, 0.97, f"{idx+2}", ha='right', va='top', fontsize=14, fontweight='bold')
-                pdf.savefig(fig)
-                del fig
-                gc.collect()
-            print(f"Grupo {idx} procesado y guardado.")
-            semaphore.release()  # Libera espacio para que un productor pueda continuar
+    # Procesamiento paralelo y guardado temporal
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        futures = []
+        for idx, group in enumerate(groups):
+            futures.append(executor.submit(producer, idx, group))
+        for f in futures:
+            f.result()  # Esperar a que todos terminen
 
-    with PdfPages(output_pdf) as pdf:
-        consumer_thread = threading.Thread(target=consumer, args=(pdf,))
-        consumer_thread.start()
-        with ThreadPoolExecutor(max_workers=workers) as executor:
-            futures = []
-            for idx, group in enumerate(groups):
-                futures.append(executor.submit(producer, idx, group))
-            # Espera a que todos los productores terminen
-            for f in futures:
-                f.result()
-        consumer_thread.join()
+    # Ensamblaje secuencial del PDF final
+    writer = PdfWriter()
+    for idx, temp_file in enumerate(temp_files):
+        if temp_file and os.path.exists(temp_file):
+            reader = PdfReader(temp_file)
+            page = reader.pages[0]
+            writer.add_page(page)
+            os.remove(temp_file)
+            print(f"Página {idx+1} añadida al PDF final.")
+        else:
+            print(f"Página {idx+1} no generada, se omite.")
+    with open(output_pdf, "wb") as f:
+        writer.write(f)
 
+    print(f"Reporte guardado en: {output_pdf}")
     return output_pdf
 
 def regenerate_train_report_page(bridge_path, date_str, train_date,  min_sensors):
@@ -505,7 +502,6 @@ def main():
     parser.add_argument('--version', action='version', version=f'%(prog)s {VERSION}')
     parser.add_argument('--min_sensors', type=int, default=5, help='Número mínimo de sensores para que una vibración sea válida (default: 5)')
     parser.add_argument('--workers', type=int, default=5, help='Número de hilos para procesar archivos (default: 5)')
-    parser.add_argument('--max_fig', type=int, default=10, help='Número máximo de figuras guardadas en memoria simultaneamente (default: 10)')
     parser.add_argument('--regenerar-hora', type=str, nargs='+', default=None, help='Hora de inicio del tren a regenerar (formato HH:MM:SS)')
     
     args = parser.parse_args()
@@ -526,7 +522,7 @@ def main():
             regenerate_train_report_page(args.bridge_path, date_str, hora, args.min_sensors)
     else:
         # Modo normal: generar informe completo
-        output = create_train_report(args.bridge_path, date_str, args.min_sensors, args.workers, args.max_fig)
+        output = create_train_report(args.bridge_path, date_str, args.min_sensors, args.workers)
         
         if output is None:
             print("No se pudo generar el informe.")
