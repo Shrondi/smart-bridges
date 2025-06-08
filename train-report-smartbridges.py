@@ -5,6 +5,7 @@ import calendar
 import locale
 import os
 import re
+import sys
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
 from datetime import datetime, timedelta
@@ -400,6 +401,10 @@ def create_train_report(bridge_path, date, min_sensors, workers):
     output_pdf = get_report_folder_path(bridge_path, date)
     os.makedirs(os.path.dirname(output_pdf), exist_ok=True)
 
+    # Carpeta temporal dentro del directorio temporal del sistema
+    temp_dir = os.path.join(tempfile.gettempdir(), "report_smartbridges_" + date)
+    os.makedirs(temp_dir, exist_ok=True)
+
     total_groups = len(groups)
     temp_files = [None] * total_groups
 
@@ -407,21 +412,16 @@ def create_train_report(bridge_path, date, min_sensors, workers):
         try:
             fig = process_file_group(group, date, idx)
             if fig is not None:
-                # Archivo oculto, comprimido, en el directorio temporal del sistema
-                tmp = tempfile.NamedTemporaryFile(
-                    dir=tempfile.gettempdir(),
-                    prefix='.report_temp_',
-                    suffix='.pdf',
-                    delete=False
-                )
-                fig.savefig(tmp.name, format='pdf')
-                tmp.close()
-                temp_files[idx] = tmp.name
+                # Archivo oculto, comprimido, en la subcarpeta temporal
+                tmp_path = os.path.join(temp_dir, f".report_fig_{idx}.pdf")
+                fig.savefig(tmp_path, format='pdf')
+                temp_files[idx] = tmp_path
                 plt.close(fig)
             print(f"Grupo {idx} procesado y guardado temporalmente.")
         except Exception as exc:
             print(f"Error procesando grupo {idx}: {exc}")
             temp_files[idx] = None
+            return None
 
     # Procesamiento paralelo y guardado temporal
     with ThreadPoolExecutor(max_workers=workers) as executor:
@@ -445,7 +445,13 @@ def create_train_report(bridge_path, date, min_sensors, workers):
     with open(output_pdf, "wb") as f:
         writer.write(f)
 
-    print(f"Reporte guardado en: {output_pdf}")
+    # Elimina la carpeta temporal si queda vacía
+    if os.path.isdir(temp_dir) and not os.listdir(temp_dir):
+        os.rmdir(temp_dir)
+    else:
+        print(f"No se han guardado correctamente todas las figuras: {temp_dir}")
+        return None
+
     return output_pdf
 
 def regenerate_train_report_page(bridge_path, date_str, train_date,  min_sensors):
@@ -526,9 +532,9 @@ def main():
         
         if output is None:
             print("No se pudo generar el informe.")
-            return
-            
-        print(f"Reporte guardado en: {output}")
+            sys.exit(1)
+        else:
+            print(f"Reporte guardado en: {output}")
 
 if __name__ == "__main__":
     main()
