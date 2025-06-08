@@ -507,7 +507,7 @@ def main():
     parser.add_argument('--date', required=False, type=str, help='Fecha en formato YYYYMMDD')
     parser.add_argument('--version', action='version', version=f'%(prog)s {VERSION}')
     parser.add_argument('--min_sensors', type=int, default=5, help='Número mínimo de sensores para que una vibración sea válida (default: 5)')
-    parser.add_argument('--workers', type=int, default=5, help='Número de hilos para procesar archivos (default: 5)')
+    parser.add_argument('--workers', type=int, default=2 * (os.cpu_count() or 1), help='Número de hilos para procesar archivos (default: 2 * núcleos CPU)')
     parser.add_argument('--regenerar-hora', type=str, nargs='+', default=None, help='Hora de inicio del tren a regenerar (formato HH:MM:SS)')
     
     args = parser.parse_args()
