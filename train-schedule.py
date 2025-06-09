@@ -91,33 +91,17 @@ def create_schedule(path_dia, sensores_bins, bin_size=5, scale=15):
     ax.set_facecolor('white')
     fig.patch.set_facecolor('white')
 
-    # Encontrar timestamps donde hay vibración (al menos un sensor en 1)
-    timestamps_con_vibraciones = [x for x in range(matriz_np.shape[1]) if np.any(matriz_np[:, x] == 1)]
+    ax.imshow(matriz, aspect='auto', cmap='Greys', interpolation='nearest')
 
-    total_timestamps = len(timestamps_con_vibraciones)
-    salto = max(1, total_timestamps // 10)  # Para espaciar colores
-    saturaciones = [1.0, 0.9, 0.85]
-    valores = [1.0, 0.9, 0.85]
-
-    # Generar colores únicos por timestamp
-    colores_por_timestamp = {}
-    for i, ts in enumerate(timestamps_con_vibraciones):
-        index = i * salto  
-        # Normalizar el índice al rango [0,1], en vez de % total_timestamps
-        h = (index / (total_timestamps * salto)) % 1 
-        s = saturaciones[i % len(saturaciones)]
-        v = valores[i % len(valores)]
-        rgb = mcolors.hsv_to_rgb([h, s, v])
-        colores_por_timestamp[ts] = mcolors.rgb2hex(rgb)
-
-    # Dibujar los rectángulos con el color del timestamp correspondiente
-    for x in range(matriz_np.shape[1]):
-        if x in colores_por_timestamp:
-            color = colores_por_timestamp[x]
-            for y in range(matriz_np.shape[0]):
-                if matriz_np[y, x] == 1:
-                    ax.add_patch(plt.Rectangle((x - 0.5, y - 0.5), 1, 1,
-                                               facecolor=color, alpha=1.0, edgecolor='none', linewidth=0))
+    # Dibujar bordes blancos solo en los laterales izquierdo y derecho de los bins activos
+    for y, fila in enumerate(matriz):
+        for x, val in enumerate(fila):
+            if val == 1:
+                # Línea izquierda
+                ax.plot([x-0.5, x-0.5], [y-0.5, y+0.5], color='white', linewidth=1)
+                # Línea derecha
+                ax.plot([x+0.5, x+0.5], [y-0.5, y+0.5], color='white', linewidth=1)
+        
 
     for y in range(len(sensores)):
         ax.hlines(y, xmin=-0.5, xmax=matriz_np.shape[1] - 0.5,
