@@ -3,6 +3,8 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib
 matplotlib.use('Agg')  # Evitar problemas con entornos sin display
+matplotlib.rcParams['pdf.fonttype'] = 42  # TrueType (mejor compatibilidad)
+matplotlib.rcParams['pdf.use14corefonts'] = False
 from datetime import datetime, timedelta
 import argparse
 import threading
@@ -64,18 +66,16 @@ def bins_sensor(ruta_sensor, bin_size=5):
 
 # --- GRAFICADO ---
 def create_schedule(path_dia, sensores_bins, bin_size=5, scale=15):
-    """
-    Crea un gráfico de la programación de grabación de eventos para los sensores en un día específico.
-    Parámetros:
-    - path_dia: ruta de la carpeta del día.
-    - sensores_bins: diccionario con los sensores y sus respectivos bins de eventos.
-    - bin_size: tamaño del bin en minutos.
-    - scale: cada cuanto minutos se muestra un tick en el eje X.
-    """
+    import matplotlib.colors as mcolors
+    import numpy as np
+    import os
+    import matplotlib.pyplot as plt
+    from datetime import datetime
+
     sensores = sorted(sensores_bins.keys())
     matriz = [sensores_bins[s] for s in sensores]
-    
-    # Etiquetas genéricas: Sensor 1, Sensor 2, ...
+    matriz_np = np.array(matriz)  # Convertir a numpy para facilitar operaciones
+
     etiquetas = [f"Sensor {i+1}" for i in range(len(sensores))]
 
     partes = os.path.normpath(path_dia).split(os.sep)
@@ -88,27 +88,58 @@ def create_schedule(path_dia, sensores_bins, bin_size=5, scale=15):
     output_path = os.path.join(path_dia, f"train_recording_schedule.pdf")
 
     fig, ax = plt.subplots(figsize=(40, max(6, 0.5 * len(sensores))))
-    ax.imshow(matriz, aspect='auto', cmap='Greys', interpolation='nearest')
+    ax.set_facecolor('white')
+    fig.patch.set_facecolor('white')
 
-    # Líneas horizontales punteadas para cada sensor
+    # Encontrar timestamps donde hay vibración (al menos un sensor en 1)
+    timestamps_con_vibraciones = [x for x in range(matriz_np.shape[1]) if np.any(matriz_np[:, x] == 1)]
+
+    total_timestamps = len(timestamps_con_vibraciones)
+    salto = max(1, total_timestamps // 10)  # Para espaciar colores
+    saturaciones = [1.0, 0.9, 0.85]
+    valores = [1.0, 0.9, 0.85]
+
+    # Generar colores únicos por timestamp
+    colores_por_timestamp = {}
+    for i, ts in enumerate(timestamps_con_vibraciones):
+        index = i * salto  
+        # Normalizar el índice al rango [0,1], en vez de % total_timestamps
+        h = (index / (total_timestamps * salto)) % 1 
+        s = saturaciones[i % len(saturaciones)]
+        v = valores[i % len(valores)]
+        rgb = mcolors.hsv_to_rgb([h, s, v])
+        colores_por_timestamp[ts] = mcolors.rgb2hex(rgb)
+
+    # Dibujar los rectángulos con el color del timestamp correspondiente
+    for x in range(matriz_np.shape[1]):
+        if x in colores_por_timestamp:
+            color = colores_por_timestamp[x]
+            for y in range(matriz_np.shape[0]):
+                if matriz_np[y, x] == 1:
+                    ax.add_patch(plt.Rectangle((x - 0.5, y - 0.5), 1, 1,
+                                               facecolor=color, alpha=1.0, edgecolor='none', linewidth=0))
+
     for y in range(len(sensores)):
-        ax.hlines(y, xmin=0, xmax=len(matriz[0]) - 1, colors='gray', linestyles='dashed', linewidth=0.7, alpha=0.5)
-    
+        ax.hlines(y, xmin=-0.5, xmax=matriz_np.shape[1] - 0.5,
+                  colors='gray', linestyles='dashed', linewidth=0.7, alpha=0.5)
+
     ax.set_yticks(range(len(sensores)))
     ax.set_yticklabels(etiquetas, fontsize=12)
     ax.tick_params(axis='y', pad=10)
 
-    # Configurar eje X (tiempo) con ticks cada 30 minutos
     step = scale // bin_size
     x_ticks = list(range(0, 1440 // bin_size, step))
     x_labels = [f"{(i * bin_size) // 60:02d}:{(i * bin_size) % 60:02d}" for i in x_ticks]
     ax.set_xticks(x_ticks)
     ax.set_xticklabels(x_labels, rotation=45)
-    
-    
-    # Obtener fecha y hora última modificación del directorio del día
+
+    ax.set_xlim(-0.5, matriz_np.shape[1] - 0.5)
+    ax.set_ylim(-0.5, len(sensores) - 0.5)
+
     fecha_mod = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    ax.text(1, 1.02, f"Last modification: {fecha_mod}", transform=ax.transAxes, ha='right', va='bottom', fontsize=10, color='gray')
+    ax.text(1, 1.02, f"Last modification: {fecha_mod}", transform=ax.transAxes,
+            ha='right', va='bottom', fontsize=10, color='gray')
+
     ax.set_xlabel("Time (HH:MM)")
     ax.set_ylabel("Sensor")
     ax.set_title(titulo, fontsize=18, fontweight='bold', pad=20)
@@ -116,6 +147,7 @@ def create_schedule(path_dia, sensores_bins, bin_size=5, scale=15):
     plt.tight_layout()
     plt.savefig(output_path)
     plt.close(fig)
+
 
 
 def process_bridge(path_dia):
