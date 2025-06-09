@@ -10,6 +10,7 @@ import argparse
 import threading
 import glob
 import sys
+import numpy as np
 
 
 def bins_sensor(ruta_sensor, bin_size=5):
@@ -66,15 +67,10 @@ def bins_sensor(ruta_sensor, bin_size=5):
 
 # --- GRAFICADO ---
 def create_schedule(path_dia, sensores_bins, bin_size=5, scale=15):
-    import matplotlib.colors as mcolors
-    import numpy as np
-    import os
-    import matplotlib.pyplot as plt
-    from datetime import datetime
 
     sensores = sorted(sensores_bins.keys())
     matriz = [sensores_bins[s] for s in sensores]
-    matriz_np = np.array(matriz)  # Convertir a numpy para facilitar operaciones
+    matriz_np = np.array(matriz)
 
     etiquetas = [f"Sensor {i+1}" for i in range(len(sensores))]
 
@@ -93,14 +89,14 @@ def create_schedule(path_dia, sensores_bins, bin_size=5, scale=15):
 
     ax.imshow(matriz, aspect='auto', cmap='Greys', interpolation='nearest')
 
-    # Dibujar bordes blancos solo en los laterales izquierdo y derecho de los bins activos
-    for y, fila in enumerate(matriz):
-        for x, val in enumerate(fila):
-            if val == 1:
-                # Línea izquierda
-                ax.plot([x-0.5, x-0.5], [y-0.5, y+0.5], color='white', linewidth=1)
-                # Línea derecha
-                ax.plot([x+0.5, x+0.5], [y-0.5, y+0.5], color='white', linewidth=1)
+    # Dibujar bordes blancos solo en los laterales izquierdo y derecho de los bins activos (vectorizado)
+    matriz_np = np.array(matriz)
+    y_coords, x_coords = np.where(matriz_np == 1)
+    for y, x in zip(y_coords, x_coords):
+        # Línea izquierda
+        ax.plot([x-0.5, x-0.5], [y-0.5, y+0.5], color='white', linewidth=1)
+        # Línea derecha
+        ax.plot([x+0.5, x+0.5], [y-0.5, y+0.5], color='white', linewidth=1)
         
 
     for y in range(len(sensores)):
