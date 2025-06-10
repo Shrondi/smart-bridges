@@ -68,11 +68,17 @@ def bins_sensor(ruta_sensor, bin_size=5):
 # --- GRAFICADO ---
 def create_schedule(path_dia, sensores_bins, bin_size=5, scale=15):
 
-    sensores = sorted(sensores_bins.keys())
+    sensores = sorted(sensores_bins.keys(), reverse=True)
     matriz = [sensores_bins[s] for s in sensores]
     matriz_np = np.array(matriz)
 
-    etiquetas = [f"Sensor {i+1}" for i in range(len(sensores))]
+    # Generar etiquetas a partir del nombre de la carpeta del sensor
+    etiquetas = [
+        f"Sensor {os.path.basename(os.path.normpath(s)).split('_', 1)[1]}"
+        if os.path.basename(os.path.normpath(s)).lower().startswith('sensor_')
+        else os.path.basename(os.path.normpath(s))
+        for s in sensores
+    ]
 
     partes = os.path.normpath(path_dia).split(os.sep)
     if len(partes) >= 3:
@@ -216,7 +222,7 @@ def process_day(ruta_raiz, yesterday):
 
 if __name__ == '__main__':
     
-    VERSION = "2.0.0"
+    VERSION = "2.0.1"
 
     parser = argparse.ArgumentParser(description="Procesar y graficar los archivos de vibraciones del día actual.")
     parser.add_argument('--version', action='version', version=f'%(prog)s {VERSION}')
