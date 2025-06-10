@@ -5,13 +5,14 @@ import threading
 import argparse
 import glob
 
-def readme_content(date_str, sensor_ids, time_reference):
+def readme_content(date_str, sensor_ids, time_reference, bridge_name):
     """
     Genera el contenido del README_daily.md para un día específico.
     Parámetros:
     - date_str: Fecha en formato 'YYYY-MM-DD'.
     - sensor_ids: Lista de IDs de sensores.
     - time_reference: Referencia de tiempo (horario de verano o estándar).
+    - bridge_name: Nombre del puente.
     """
     
     sampling_rate = 125  # Hz
@@ -28,7 +29,7 @@ def readme_content(date_str, sensor_ids, time_reference):
     
     lines = []
     lines.append(f"# Acceleration Data – {date_str}\n")
-    lines.append(f"This folder contains raw acceleration data recorded on **{date_str_nice}** from {len(sensor_ids)} sensors installed on the AVE bridge.\n")
+    lines.append(f"This folder contains raw acceleration data recorded on **{date_str_nice}** from {len(sensor_ids)} sensors installed on the {bridge_name} bridge.\n")
     lines.append(f"- **Sampling rate**: {sampling_rate} Hz")
     lines.append(f"- **Segment duration**: {segment_duration}")
     lines.append(f"- **Time format**: {time_format}")
@@ -70,6 +71,10 @@ def generate_readme_daily(day_path):
     sensor_ids = [f"Sensor {d.split('_', 1)[1]}" if d.lower().startswith('sensor_') else d for d in sorted(sensores_dir)]
     
     partes = os.path.normpath(day_path).split(os.sep)
+    if len(partes) >= 4:
+        bridge_name = partes[-5] if partes[-4] == 'raw' else partes[-4]
+    else:
+        bridge_name = "UNKNOWN"
     if len(partes) >= 3:
         year, month, day = partes[-3], partes[-2], partes[-1]
         try:
@@ -89,7 +94,7 @@ def generate_readme_daily(day_path):
     else:
         time_reference = "Times correspond to local time in Spain (CET, UTC+1 — Standard Time)"
         
-    readme_txt = readme_content(date_str, sensor_ids, time_reference)
+    readme_txt = readme_content(date_str, sensor_ids, time_reference, bridge_name)
     
     readme_path = os.path.join(day_path, "README_daily.md")
     with open(readme_path, "w") as f:
@@ -111,12 +116,13 @@ def start_create_readme(root_path):
     
     today = datetime.now()
     year = str(today.year)
-    month_str = today.strftime("%B")
+    month_str = today.strftime("%B").lower()
     day = today.strftime("%d")
     
     day_dirs = [d for d in glob.glob(os.path.join(root_path, "*", "raw", year, month_str, day)) if os.path.isdir(d)]
     threads = []
     for day_path in day_dirs:
+        print(f"[+] Procesando directorio: {day_path}")
         t = threading.Thread(target=generate_readme_daily, args=(day_path,))
         t.start()
         threads.append(t)
