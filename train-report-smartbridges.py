@@ -12,6 +12,8 @@ from datetime import datetime, timedelta
 
 import matplotlib
 matplotlib.use('Agg')  # Usar backend no interactivo (solo para escribir en archivos)
+matplotlib.rcParams['pdf.fonttype'] = 42  # TrueType (mejor compatibilidad)
+matplotlib.rcParams['pdf.use14corefonts'] = False
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -57,7 +59,7 @@ def get_report_folder_path(bridge_path, date_str):
 def get_raw_folder_path(bridge_path, date_str):
     """Genera la ruta a la carpeta de datos para una fecha específica."""
     year, month_name, _, day = get_date(date_str)
-    return os.path.join(bridge_path, year, month_name, day)
+    return os.path.join(bridge_path, 'raw', year, month_name, day)
 
 def validate_hora_format(hora):
     """Valida que la hora tenga formato HH:MM:SS"""
@@ -71,7 +73,20 @@ def load_data(input_path):
     """Loads and processes a single CSV file."""
     print(f"Cargando datos: {input_path}")
     try:
-        df = pd.read_csv(input_path, index_col='timestamp', parse_dates=['timestamp'], date_format='%H:%M:%S.%f', engine='c')
+        # Cargar el archivo CSV y establecer 'timestamp' como índice
+        df = pd.read_csv(input_path, index_col='timestamp', 
+                         parse_dates=['timestamp'], 
+                         date_format='%H:%M:%S.%f', 
+                         engine='c', on_bad_lines='error')
+
+        # Verificar si las columnas esperadas existen
+        if 'timestamp' not in df.index.names:
+            print(f"[x] El archivo {input_path} no tiene la columna 'timestamp' como índice. Se omite.")
+            return pd.DataFrame()
+        
+        if list(df.columns) != ['x_accel (g)', 'y_accel (g)', 'z_accel (g)']:
+            print(f"[x] El archivo {input_path} no tiene las columnas esperadas. Se omite.")
+            return pd.DataFrame()
         
         # Renombrar columnas para que coincidan con el resto del código
         df.rename(columns={
@@ -278,6 +293,10 @@ def process_file_group(file_group, str_date, train_number):
     colors = create_color_mapping(sensors)
 
     fig, axes = plt.subplots(3, 2, figsize=(20, 20), gridspec_kw={'width_ratios': [3, 3]})
+    
+    axes.set_facecolor('white')
+    fig.patch.set_facecolor('white')
+    
     first_datetime = combined_df.index[0]
 
     figure_title = f"Train {train_number + 1} - {day}/{month_number} {first_datetime.strftime('%H:%M:%S')}"
