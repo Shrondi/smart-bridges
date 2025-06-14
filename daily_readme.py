@@ -119,12 +119,14 @@ def start_create_readme(root_path):
     month_str = today.strftime("%B").lower()
     day = today.strftime("%d")
     
-    day_dirs = [os.path.join(root_path, d, "raw", year, month_str, day) for d in os.listdir(root_path) if os.path.isdir(os.path.join(root_path, d))]
+    day_dirs = [d for d in glob.glob(os.path.join(root_path, "*", "raw", year, month_str, day)) if os.path.isdir(d)]
     threads = []
+    
+    if not day_dirs:
+        print(f"[!] No se encontraron directorios de datos para el día {year}-{month_str}-{day} en la ruta '{root_path}'.")
+        return
+    
     for day_path in day_dirs:
-        if not os.path.exists(day_path):
-            os.makedirs(day_path, exist_ok=True)
-
         print(f"[+] Procesando directorio: {day_path}")
         t = threading.Thread(target=generate_readme_daily, args=(day_path,))
         t.start()
