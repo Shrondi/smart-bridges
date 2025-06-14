@@ -1,5 +1,5 @@
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 import pytz
 import threading
 import argparse
@@ -114,10 +114,10 @@ def start_create_readme(root_path):
         print(f"[!] La ruta raíz '{root_path}' no es un directorio válido o no existe.")
         return
     
-    today = datetime.now()
-    year = str(today.year)
-    month_str = today.strftime("%B").lower()
-    day = today.strftime("%d")
+    yesterday = datetime.now() - timedelta(days=1)
+    year = str(yesterday.year)
+    month_str = yesterday.strftime("%B").lower()
+    day = yesterday.strftime("%d")
     
     day_dirs = [d for d in glob.glob(os.path.join(root_path, "*", "raw", year, month_str, day)) if os.path.isdir(d)]
     threads = []
