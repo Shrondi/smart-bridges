@@ -5,6 +5,7 @@ import os
 import json
 from datetime import datetime, timedelta
 import argparse
+import threading
 
 def parse_times_from_filename(filename):
     """
@@ -140,15 +141,9 @@ def generate_summary(sensor_id, date_str, sampling_rates_dict, csv_dfs):
     }
     return summary
 
-def start_summary(root):
-    # Calcular fecha del día anterior
-    ayer = datetime.now() - timedelta(days=1)
-    year = str(ayer.year)
-    month = ayer.strftime("%B").lower()
-    day = ayer.strftime("%d")
-
-    # Buscar solo sensores del día anterior
-    pattern = os.path.join(root, '*', 'raw', year, month, day, 'sensor_*')
+def process_bridge(bridge_path):
+    # Buscar todos los sensores bajo este puente, en todas las fechas
+    pattern = os.path.join(bridge_path, 'raw', '*', '*', '*', 'sensor_*')
     sensor_dirs = glob.glob(pattern)
     sensores = []
     for sensor_dir in sensor_dirs:
@@ -162,8 +157,7 @@ def start_summary(root):
         
         sensores.append((sensor_dir, sensor_id, year, month, day))
 
-    print(f"[+] Encontrados {len(sensores)} sensores para procesar del día anterior ({year}-{month}-{day}).")
-    
+    print(f"[+] [{os.path.basename(bridge_path)}] {len(sensores)} sensores para procesar en todas las fechas.")
     for sensor_dir, sensor_id, year, month, day in sensores:
         try:
             try:
@@ -184,10 +178,23 @@ def start_summary(root):
             
             with open(out_path, "w") as f:
                 json.dump(summary, f, indent=2)
-            print(f"[+] Resumen generado en {out_path}")
-            
+            print(f"[+] [{os.path.basename(bridge_path)}] Resumen generado en {out_path}")
         except Exception as e:
-            print(f"[!] Error procesando {sensor_dir}: {e}")
+            print(f"[!] [{os.path.basename(bridge_path)}] Error procesando {sensor_dir}: {e}")
+
+def start_summary(root):
+    # Buscar todos los puentes bajo root
+    bridges = [os.path.join(root, d) for d in os.listdir(root) if os.path.isdir(os.path.join(root, d))]
+    
+    print(f"[+] Procesando {len(bridges)} puentes en paralelo...")
+    threads = []
+    for bridge in bridges:
+        t = threading.Thread(target=process_bridge, args=(bridge,))
+        t.start()
+        threads.append(t)
+
+    for t in threads:
+        t.join()
 
 def main():
     VERSION = "1.0.0"
