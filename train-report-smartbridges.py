@@ -294,9 +294,6 @@ def process_file_group(file_group, str_date, train_number):
 
     fig, axes = plt.subplots(3, 2, figsize=(20, 20), gridspec_kw={'width_ratios': [3, 3]})
     
-    axes.set_facecolor('white')
-    fig.patch.set_facecolor('white')
-    
     first_datetime = combined_df.index[0]
 
     figure_title = f"Train {train_number + 1} - {day}/{month_number} {first_datetime.strftime('%H:%M:%S')}"
