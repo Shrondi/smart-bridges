@@ -142,8 +142,14 @@ def generate_summary(sensor_id, date_str, sampling_rates_dict, csv_dfs):
     return summary
 
 def process_bridge(bridge_path):
-    # Buscar todos los sensores bajo este puente, en todas las fechas
-    pattern = os.path.join(bridge_path, 'raw', '*', '*', '*', 'sensor_*')
+    # Calcular fecha del día anterior
+    ayer = datetime.now() - timedelta(days=1)
+    year = str(ayer.year)
+    month = ayer.strftime("%B").lower()
+    day = ayer.strftime("%d")
+
+    # Buscar solo sensores del día anterior
+    pattern = os.path.join(bridge_path, 'raw', year, month, day, 'sensor_*')
     sensor_dirs = glob.glob(pattern)
     sensores = []
     for sensor_dir in sensor_dirs:
@@ -157,7 +163,7 @@ def process_bridge(bridge_path):
         
         sensores.append((sensor_dir, sensor_id, year, month, day))
 
-    print(f"[+] [{os.path.basename(bridge_path)}] {len(sensores)} sensores para procesar en todas las fechas.")
+    print(f"[+] [{os.path.basename(bridge_path)}] {len(sensores)} sensores para procesar del día anterior ({year}-{month}-{day}).")
     for sensor_dir, sensor_id, year, month, day in sensores:
         try:
             try:
