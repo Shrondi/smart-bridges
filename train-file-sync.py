@@ -14,19 +14,23 @@ DEBOUNCE_SECONDS = 5
 def esperar_quitar_lock(path_lock, timeout=1200):  # 20 min
     """Espera hasta que desaparezca el .lock o se supere el timeout (en segundos)."""
     start_time = time.time()
-    print(f"[!] Lock {path_lock} detectado")
-    while os.path.exists(path_lock):
-        elapsed = time.time() - start_time
-        print(f"[!] Esperando {elapsed:.2f}s: {path_lock}")
-        if elapsed > timeout:
-            print(f"[✗] Timeout esperando lock ({timeout}s): {path_lock}")
-            return False
+    
+    if os.path.exists(path_lock):
+        print(f"[!] Lock {path_lock} detectado")
         
-        if elapsed == timeout/2:
-            print(f"[!] Lock {path_lock} ha estado presente por más de {timeout/2} minutos... Cambiando comprobación cada 2 minutos")
-            time.sleep(120)
-        else:
-            time.sleep(10)  # Espera 10 segundos antes de volver a comprobar
+        # Si el lock existe, espera hasta que desaparezca
+        while os.path.exists(path_lock):
+            elapsed = time.time() - start_time
+            print(f"[!] Esperando {elapsed:.2f}s: {path_lock}")
+            if elapsed > timeout:
+                print(f"[✗] Timeout esperando lock ({timeout}s): {path_lock}")
+                return False
+            
+            if elapsed == timeout/2:
+                print(f"[!] Lock {path_lock} ha estado presente por más de {timeout/2} minutos... Cambiando comprobación cada 2 minutos")
+                time.sleep(120)
+            else:
+                time.sleep(10)  # Espera 10 segundos antes de volver a comprobar
 
     return True
 
