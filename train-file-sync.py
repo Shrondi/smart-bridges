@@ -48,6 +48,12 @@ def transferir_archivo(path, usuario, ip, destino_dir):
             print(f"[!] Archivo anómalo movido a: {ruta_final}")
         
         process_file(ruta_final)
+        
+        # Verifica si el archivo aún existe antes de enviar
+        if not os.path.exists(ruta_final):
+            print(f"[!] Archivo ya no existe: {ruta_final}. Se ignora.")
+            return
+        
         print(f"[+] Enviando archivo: {ruta_final}")
         comando = [
             "rsync", "-avz", "-e", "ssh", "--relative", "--remove-source-files",
@@ -74,7 +80,7 @@ class CSVHandler(FileSystemEventHandler):
         self._timer = None
 
     def on_created(self, event):
-        if not event.is_directory and event.src_path.endswith(".csv"):
+        if not event.is_directory and event.src_path.endswith(".csv") and not "anomalias" in event.src_path:
             with self._lock:
                 self._archivos_pendientes.add(event.src_path)
             self._reiniciar_timer()
@@ -127,7 +133,7 @@ def procesar_existentes(args):
 
 def main():
 
-    VERSION = "2.4.0"
+    VERSION = "2.4.1"
 
     parser = argparse.ArgumentParser(description="Monitoriza una estructura de directorios con archivos CSV y los transfiere después de procesarlos.")
     
