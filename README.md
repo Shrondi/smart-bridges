@@ -14,7 +14,6 @@
 - [Financiación](#financiación)
 - [Licencia](#licencia)
 
-
 ## Información del proyecto
 
 - **Título:** `SMART-BRIDGES`  

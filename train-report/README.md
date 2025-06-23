@@ -1,74 +1,35 @@
-# Train Report - SmartBridges <!-- omit from toc -->
+# Train Report - SmartBridges
 
-Generación de informes PDF a partir de ficheros CSV con los datos de los acelerómetros, agrupando lógicamente los eventos de vibración detectados para determinar que vibraciones corresponden al paso de los trenes y su posterior resumen en un fichero de reportes.
+Generación de informes PDF a partir de ficheros CSV con los datos de los acelerómetros, agrupando lógicamente los eventos de vibración detectados para determinar qué vibraciones corresponden al paso de los trenes y su posterior resumen en un fichero de reportes.
 
-## Índice <!-- omit from toc -->
+Para más detalles sobre el módulo, veáse la [documentación](https://shrondi.github.io/smart-bridges/train-report.html) completa del módulo.
 
-- [Train Report - SmartBridges](#train-report---smartbridges)
-  - [Descripción](#descripción)
-  - [Uso](#uso)
-    - [Requisitos](#requisitos)
-    - [Ejecución básica](#ejecución-básica)
-    - [Regenerar una página concreta del informe](#regenerar-una-página-concreta-del-informe)
-    - [Salida](#salida)
-- [Documentación adicional](#documentación-adicional)
-
-
-## Descripción
-
-El script `train-report-smartbridges.py` procesa los archivos CSV de los datos en crudo para cada uno de los sensores, agrupando los eventos de trenes detectados en función de la coincidencia temporal entre sensores. 
-
-Una vez determinadas que vibraciones corresponden a un tren, se genera una página en un informe PDF con gráficas de aceleración por cada eje y la transformada FFT.
-
-Para una explicación más detallada del proceso, véase [Funcionamiento](./EXPLANATION.md)
-
-## Uso
-
-### Requisitos
+## Requisitos
 
 - Python 3.7+
-- Paquetes: pandas, numpy, matplotlib, seaborn, scipy, PyPDF2
+- Paquetes: matplotlib, numpy, pandas, seaborn, scipy, PyPDF2
 
-Instalación de dependencias (recomendado en un entorno virtual):
+## Instalación
+
+Instala las dependencias con:
 
 ```sh
-pip install pandas numpy matplotlib seaborn scipy PyPDF2
+pip install -r requirements.txt
 ```
 
-### Ejecución básica
+## Uso básico
 
-Para generar el informe completo del día anterior:
+Ejecuta el script indicando la ruta al puente:
 
 ```sh
 python train-report-smartbridges.py --bridge_path /ruta/al/puente
 ```
 
-Para especificar una fecha concreta (formato YYYYMMDD):
+Parámetros útiles:
+- `--date YYYYMMDD` : Fecha a procesar (opcional)
+- `--regenerar-hora HH:MM:SS [HH:MM:SS ...]` : Regenera páginas concretas (opcional)
 
-```sh
-python train-report-smartbridges.py --bridge_path /ruta/al/puente --date 20240601
-```
-
-Parámetros opcionales:
-
-- `--min_sensors N` : Número mínimo de sensores para considerar un evento (por defecto: 5)
-- `--workers N`     : Número de hilos para el procesamiento paralelo (por defecto: 2 x núcleos CPU)
-
-### Regenerar una página concreta del informe
-
-Si necesitas regenerar la página de un tren concreto (por ejemplo, el tren detectado a las 12:34:56):
-
-```sh
-python train-report-smartbridges.py --bridge_path /ruta/al/puente --date 20240601 --regenerar-hora 12:34:56
-```
-
-Puedes pasar varias horas separadas por espacio:
-
-```sh
-python train-report-smartbridges.py --bridge_path /ruta/al/puente --date 20240601 --regenerar-hora 12:34:56 13:45:00
-```
-
-### Salida
+## Salida
 
 El informe PDF se guarda en:
 
@@ -76,12 +37,10 @@ El informe PDF se guarda en:
 /ruta/al/puente/report/<año>/<mes>/<día>/train_report_<fecha>.pdf
 ```
 
-# Documentación adicional
-Para más detalles, consulta la documentación asociada:
-- [Funcionamiento detallado](./EXPLANATION.md)
+## Notas
+- Los datos deben organizarse en carpetas `raw` (datos originales) y `report` (informes generados) dentro de la carpeta del puente, estructuradas en subcarpetas por año/mes/día.
+- Los archivos CSV deben seguir el formato requerido por el script para ser procesados correctamente.
+- Para más detalles, consulta la documentación completa del proyecto
 
-
-
----
 
 
