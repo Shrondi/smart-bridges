@@ -1,5 +1,5 @@
 Estructura del repositorio
-=======================
+==========================
 
 A continuación se muestra la estructura principal del directorio del proyecto ``smart-bridges`` y una breve descripción de cada carpeta y archivo relevante:
 
@@ -17,8 +17,7 @@ A continuación se muestra la estructura principal del directorio del proyecto `
    ├── README.md              # Descripción general y guía rápida del repositorio
    └── requirements.txt       # Dependencias necesarias para el proyecto
 
-Descripción de carpetas y archivos
-----------------------------------
+.. rubric:: Descripción de carpetas y archivos
 
 - **docs/**  
   Contiene la documentación del proyecto, incluyendo la configuración y los archivos fuente para Sphinx.
@@ -29,8 +28,8 @@ Descripción de carpetas y archivos
   - ``train-report-smartbridges.py``  
     Script principal para la generación de informes de eventos de tren detectados por los sensores.
 
-  - ``EXPLANATION.md``  
-    Documento con la explicación detallada del funcionamiento interno del script y la lógica de agrupación de eventos.
+  - ``requirements.txt``  
+    Archivo con las dependencias específicas necesarias para el módulo ``train-report``.
 
   - ``README.md``  
     Guía de uso y descripción específica del módulo ``train-report``.
@@ -43,10 +42,3 @@ Descripción de carpetas y archivos
 
 - **README.md**  
   Descripción general, objetivos y guía rápida de uso del repositorio.
-
-- **requirements.txt**  
-  Archivo con la lista de dependencias de Python necesarias para ejecutar el proyecto.
-
-----
-
-Esta estructura puede ampliarse a medida que el proyecto crezca o se incorporen
