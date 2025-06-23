@@ -6,14 +6,19 @@
      </a>
    </div>
 
+
 SMART-BRIDGES
 =============
 
 **Monitorización inteligente del estado estructural de puentes ferroviarios de alta velocidad**
 
+.. note::
+   Esta documentación está en desarrollo y puede estar incompleta o cambiar próximamente.
+
+
 .. toctree::
    :maxdepth: 2
-   :caption: Índice de módulos
+   :caption: Índice
 
    structure
    train-report
