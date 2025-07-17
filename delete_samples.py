@@ -20,7 +20,7 @@ def clean_by_majority_sign(df):
     # Filtrar filas: mantener solo las que coincidan con el signo mayoritario en columnas válidas
     mask = np.all((signs == majority_sign) | np.isnan(majority_sign), axis=1)
     
-    return df[mask].reset_index(drop=True)
+    return df[mask]
 
 def remove_jumps(df, threshold=0.5):
     """
@@ -37,4 +37,4 @@ def remove_jumps(df, threshold=0.5):
     if not mask.empty:
         mask.iloc[0] = True  # Mantener la primera muestra
         
-    return df[mask].reset_index(drop=True)
+    return df[mask]
