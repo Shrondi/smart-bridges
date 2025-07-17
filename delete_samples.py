@@ -27,7 +27,9 @@ def remove_jumps(df, threshold=0.5):
     diff = df[cols].diff().abs()
     # Mantener la primera fila y aquellas donde ninguna diferencia supera el umbral
     mask = (diff <= threshold).all(axis=1)
-    mask.iloc[0] = True  # Mantener la primera muestra
+    if not mask.empty:
+        mask.iloc[0] = True  # Mantener la primera muestra
+        
     return df[mask].reset_index(drop=True)
 
 def process_file(file):
