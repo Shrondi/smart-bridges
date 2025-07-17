@@ -9,9 +9,6 @@ def is_anomalous(df, min_duration=2):
     Returns:
         bool: True si el DataFrame es anómalo, False en caso contrario.
     """
-    # Verificar que el DataFrame no esté vacío
-    if df.empty:
-        return True  # Es anómalo si está vacío
 
     # Verificar si los timestamps están ordenados
     if not df.index.is_monotonic_increasing:

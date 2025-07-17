@@ -79,8 +79,14 @@ def process_file(filepath):
     
     df = load_file(filepath)
     
+    if df.empty:
+        return None
+    
     df_clean = clean_data(df)
     print(f"[!] Archivo {filepath} procesado. Filas eliminadas: {len(df) - len(df_clean)} de {len(df)} ({(len(df) - len(df_clean)) / len(df):.2%})")
+    
+    if df_clean.empty:
+        return None
     
     destino = get_anomalies_filepath(filepath) if is_anomalous(df_clean) else filepath
        

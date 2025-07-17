@@ -47,6 +47,10 @@ def transferir_archivo(path, usuario, ip, destino_dir):
             print(f"[✓] Lock eliminado. Preparando...: {path}")
         
         ruta_final = process_file(path)
+        if ruta_final is None:
+            print(f"[✗] Archivo {path} está vacío después del procesamiento. Se elimina.")
+            os.remove(path)
+            return
         
         # Verifica si el archivo aún existe antes de enviar
         if not os.path.exists(ruta_final):
