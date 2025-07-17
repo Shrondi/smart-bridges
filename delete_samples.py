@@ -38,28 +38,3 @@ def remove_jumps(df, threshold=0.5):
         mask.iloc[0] = True  # Mantener la primera muestra
         
     return df[mask].reset_index(drop=True)
-
-def process_file(file):
-    """
-    Procesa un único archivo acceleration_*.csv indicado por su ruta.
-    Elimina filas cuyo signo en cualquier eje no coincida con el signo mayoritario de ese eje.
-    """
-    try:
-        df = pd.read_csv(file, sep=',', engine='c')
-    except Exception as e:
-        print(f"No se pudo leer {file}. Error: {e}")
-        return
-    
-    n_original = len(df)
-    try:
-        df_clean = clean_by_majority_sign(df)
-        df_clean = remove_jumps(df_clean, threshold=0.5)
-    except Exception as e:
-        print(f"No se pudo limpiar el archivo {file}. Error: {e}")
-        return
-    
-    n_final = len(df_clean)
-    n_eliminadas = n_original - n_final
-    if n_eliminadas > 0:
-        print(f"Filas eliminadas en {file}: {n_eliminadas} de {n_original} ({n_eliminadas/n_original:.2%})")
-        df_clean.to_csv(file, index=False)
