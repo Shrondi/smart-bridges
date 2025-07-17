@@ -5,10 +5,9 @@ import sys
 import argparse
 import threading
 import concurrent.futures
-from delete_samples import process_file
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
-from check_train_file import verifyFile, moveToFolder
+from train_file_processing import process_file
 
 DEBOUNCE_SECONDS = 5
 
@@ -46,13 +45,8 @@ def transferir_archivo(path, usuario, ip, destino_dir):
             os.remove(lock_path) # Eliminar el lock si ha superado el timeout
         else:
             print(f"[✓] Lock eliminado. Preparando...: {path}")
-
-        # Verifica si el archivo es anómalo y lo mueve si es necesario
-        es_anomalo, ruta_final = verifyFile(path)
-        if es_anomalo:
-            print(f"[!] Archivo anómalo movido a: {ruta_final}")
         
-        process_file(ruta_final)
+        ruta_final = process_file(path)
         
         # Verifica si el archivo aún existe antes de enviar
         if not os.path.exists(ruta_final):
@@ -65,8 +59,8 @@ def transferir_archivo(path, usuario, ip, destino_dir):
             ruta_final, f"{usuario}@{ip}:{destino_dir}"
         ]
         
-         # Ejecuta y lanza excepción si falla
-        resultado = subprocess.run(comando, check=True)
+        # Ejecuta y lanza excepción si falla
+        subprocess.run(comando, check=True)
         print(f"[✓] Transferencia completada: {ruta_final}")
 
     except subprocess.CalledProcessError as e:
@@ -149,7 +143,7 @@ def procesar_existentes(args):
 
 def main():
 
-    VERSION = "2.5.0"
+    VERSION = "2.6.0"
 
     parser = argparse.ArgumentParser(description="Monitoriza una estructura de directorios con archivos CSV y los transfiere después de procesarlos.")
     
