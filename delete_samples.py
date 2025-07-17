@@ -1,4 +1,3 @@
-import pandas as pd
 import numpy as np
 
 def clean_by_majority_sign(df):

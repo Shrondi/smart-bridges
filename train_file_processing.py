@@ -1,6 +1,5 @@
 import pandas as pd
 import os
-import shutil
 from delete_samples import clean_by_majority_sign, remove_jumps
 from check_train_file import is_anomalous
 
