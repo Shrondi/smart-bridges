@@ -4,10 +4,10 @@ import time
 import sys
 import argparse
 import threading
-from delete_samples import process_file
+import concurrent.futures
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
-from check_train_file import verifyFile, moveToFolder
+from train_file_processing import process_file
 
 DEBOUNCE_SECONDS = 5
 
@@ -45,13 +45,12 @@ def transferir_archivo(path, usuario, ip, destino_dir):
             os.remove(lock_path) # Eliminar el lock si ha superado el timeout
         else:
             print(f"[✓] Lock eliminado. Preparando...: {path}")
-
-        # Verifica si el archivo es anómalo y lo mueve si es necesario
-        es_anomalo, ruta_final = verifyFile(path)
-        if es_anomalo:
-            print(f"[!] Archivo anómalo movido a: {ruta_final}")
         
-        process_file(ruta_final)
+        ruta_final = process_file(path)
+        if ruta_final is None:
+            print(f"[✗] Archivo {path} está vacío después del procesamiento. Se elimina.")
+            os.remove(path)
+            return
         
         # Verifica si el archivo aún existe antes de enviar
         if not os.path.exists(ruta_final):
@@ -64,8 +63,8 @@ def transferir_archivo(path, usuario, ip, destino_dir):
             ruta_final, f"{usuario}@{ip}:{destino_dir}"
         ]
         
-         # Ejecuta y lanza excepción si falla
-        resultado = subprocess.run(comando, check=True)
+        # Ejecuta y lanza excepción si falla
+        subprocess.run(comando, check=True)
         print(f"[✓] Transferencia completada: {ruta_final}")
 
     except subprocess.CalledProcessError as e:
@@ -82,6 +81,7 @@ class CSVHandler(FileSystemEventHandler):
         self._lock = threading.Lock()
         self._archivos_pendientes = set()
         self._timer = None
+        self._executor = concurrent.futures.ThreadPoolExecutor()
 
     def on_created(self, event):
         if not event.is_directory and event.src_path.endswith(".csv") and not "anomalias" in event.src_path:
@@ -103,41 +103,52 @@ class CSVHandler(FileSystemEventHandler):
 
         print(f"[DEBOUNCE] Procesando {len(archivos)} archivo(s) tras {DEBOUNCE_SECONDS}s sin cambios...")
 
-        for path in archivos:
+        futures = [
+            self._executor.submit(
+                transferir_archivo,
+                path,
+                self.args.user,
+                self.args.host,
+                self.args.destination
+            ) for path in archivos
+        ]
+        for future in concurrent.futures.as_completed(futures):
             try:
-                transferir_archivo(
-                    path,
-                    self.args.user,
-                    self.args.host,
-                    self.args.destination
-                )
+                future.result()
             except Exception as e:
                 print(f"[ERROR] Excepción en procesamiento: {e}")
                 self.observer.stop()
                 sys.exit(1)
 
 def procesar_existentes(args):
-    threads = []
+    archivos = []
     for root, _, files in os.walk(args.source):
         for name in files:
             if name.endswith(".csv"):
                 full_path = os.path.join(root, name)
                 print(f"Procesando archivo preexistente: {full_path}")
-                hilo = threading.Thread(target=transferir_archivo, args=(
-                    full_path,
-                    args.user,
-                    args.host,
-                    args.destination
-                ), daemon=True)
-                hilo.start()
-                threads.append(hilo)
-    # Esperar a que terminen los hilos de archivos preexistentes antes de empezar a observar
-    for hilo in threads:
-        hilo.join()
+                archivos.append(full_path)
+                
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        futures = [
+            executor.submit(
+                transferir_archivo,
+                full_path,
+                args.user,
+                args.host,
+                args.destination
+            ) for full_path in archivos
+        ]
+        for future in concurrent.futures.as_completed(futures):
+            try:
+                future.result()
+            except Exception as e:
+                print(f"[ERROR] Excepción en procesamiento de archivo preexistente: {e}")
+                raise
 
 def main():
 
-    VERSION = "2.4.1"
+    VERSION = "2.6.0"
 
     parser = argparse.ArgumentParser(description="Monitoriza una estructura de directorios con archivos CSV y los transfiere después de procesarlos.")
     
