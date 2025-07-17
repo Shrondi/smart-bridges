@@ -3,21 +3,25 @@ import numpy as np
 def clean_by_majority_sign(df):
     """
     Para cada columna de aceleración, calcula el signo mayoritario y elimina las filas cuyo signo en esa columna no coincida.
-    En caso de empate (suma=0), se considera positivo por defecto.
+    En caso de empate (suma=0), esa columna no se usa para filtrar filas (no se modifica).
     """
     cols = ['x_accel (g)', 'y_accel (g)', 'z_accel (g)']
     
     data = df[cols].values
     signs = np.sign(data)
     
-    # Calcular el signo mayoritario para cada columna
+    # Calcular el signo mayoritario por columna
     majority_sign = np.sign(np.sum(signs, axis=0))
     
-   # Ignorar columnas con empate (suma=0) estableciendo su signo mayoritario como NaN
-    majority_sign[majority_sign == 0] = np.nan
+    # Columnas con mayoría clara (no empate)
+    valid_cols = majority_sign != 0
     
-    # Filtrar filas: mantener solo las que coincidan con el signo mayoritario en columnas válidas
-    mask = np.all((signs == majority_sign) | np.isnan(majority_sign), axis=1)
+    # Filtrar filas donde el signo coincide en columnas válidas
+    # Si no hay columnas válidas, no se filtra ninguna fila (mask a True)
+    if valid_cols.any():
+        mask = (signs[:, valid_cols] == majority_sign[valid_cols]).all(axis=1)
+    else:
+        mask = np.ones(len(df), dtype=bool)
     
     return df[mask]
 
