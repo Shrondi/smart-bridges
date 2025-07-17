@@ -44,6 +44,7 @@ def get_anomalies_filepath(filepath):
     # Solo cambia la ruta si no está ya en la carpeta de anomalías
     if os.path.basename(carpeta_actual) != 'anomalias':
         os.makedirs(carpeta_anomalias, exist_ok=True)
+        os.remove(filepath)  # Elimina el archivo original solo si se va a mover
         return os.path.join(carpeta_anomalias, os.path.basename(filepath))
     
     return filepath
