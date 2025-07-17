@@ -140,6 +140,7 @@ def procesar_existentes(args):
                 future.result()
             except Exception as e:
                 print(f"[ERROR] Excepción en procesamiento de archivo preexistente: {e}")
+                raise
 
 def main():
 
