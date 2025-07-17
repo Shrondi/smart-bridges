@@ -11,10 +11,13 @@ def clean_by_majority_sign(df):
     signs = np.sign(data)
     # Calcular el signo mayoritario para cada columna
     majority_sign = np.sign(np.sum(signs, axis=0))
-    # Si hay empate (suma=0), se considera positivo por defecto
-    majority_sign[majority_sign == 0] = 1
-    # Crear máscara: True si todos los signos coinciden con el mayoritario
-    mask = (signs == majority_sign).all(axis=1)
+    
+   # Ignorar columnas con empate (suma=0) estableciendo su signo mayoritario como NaN
+    majority_sign[majority_sign == 0] = np.nan
+    
+    # Filtrar filas: mantener solo las que coincidan con el signo mayoritario en columnas válidas
+    mask = np.all((signs == majority_sign) | np.isnan(majority_sign), axis=1)
+    
     return df[mask].reset_index(drop=True)
 
 def remove_jumps(df, threshold=0.5):
