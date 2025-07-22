@@ -1,240 +1,209 @@
-import os
-import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib
-matplotlib.use('Agg')  # Evitar problemas con entornos sin display
-matplotlib.rcParams['pdf.fonttype'] = 42  # TrueType (mejor compatibilidad)
-matplotlib.rcParams['pdf.use14corefonts'] = False
-from datetime import datetime, timedelta
+import concurrent.futures
 import argparse
-import threading
-import glob
 import sys
 import numpy as np
+from pathlib import Path
+from datetime import datetime
+
+# Configuración de matplotlib
+matplotlib.use('Agg')  # Entorno sin display
+matplotlib.rcParams['pdf.fonttype'] = 42  # TrueType (mejor compatibilidad)
+matplotlib.rcParams['pdf.use14corefonts'] = False
 
 
-def bins_sensor(ruta_sensor, bin_size=5):
+def timestamps_sensor(path_sensor):
     """
-    Genera un array de bins de eventos para un sensor específico, donde cada bin representa un intervalo de tiempo.
+    Extrae los timestamps de los archivos CSV de un sensor específico.
     """
-    num_bins = 24 * 60 // bin_size
-    bins = [0] * num_bins
-
-    # Buscar todos los archivos CSV en el directorio del sensor y subcarpetas,
-    # evitando los que estén en rutas que contengan 'anomalias'
-    csv_files = [
-        f for f in glob.iglob(os.path.join(ruta_sensor, '**', '*.csv'), recursive=True)
-        if os.path.isfile(f) and 'anomalias' not in f.lower()
-    ]
-
-    for archivo_csv in csv_files:
-
-        try:
-            df = pd.read_csv(archivo_csv, sep=',', engine='c')
-        except Exception as e:
-            print(f"[x] Error leyendo {os.path.basename(archivo_csv)}: {e}")
-            continue
+    try:
         
-        if df.empty:
-            print(f"[!] El archivo {os.path.basename(archivo_csv)} está vacío, se omite.")
-            continue
-        
-        # Comprobar cabecera exacta
-        if list(df.columns) != ['timestamp', 'x_accel (g)', 'y_accel (g)', 'z_accel (g)']:
-            print(f"[x] El archivo {os.path.basename(archivo_csv)} no tiene la cabecera esperada. Se omite.")
-            continue
-        
-        # Extraer solo la columna de timestamps. Marcar errores de conversión como NaT para eliminar después
-        tiempos = pd.to_datetime(df['timestamp'], format='%H:%M:%S.%f', errors='coerce')
-        tiempos = tiempos.dropna()
-        
-        if tiempos.empty:
-            print(f"[!] No hay timestamps válidos en {os.path.basename(archivo_csv)}.")
-            continue
-        
-        # Calcular minutos desde medianoche
-        minutos = tiempos.dt.hour * 60 + tiempos.dt.minute
-        
-        # Calcular el índice de bin para cada evento
-        indices_bin = (minutos // bin_size).astype(int, errors='ignore')
-        
-        valid_bins = indices_bin[(indices_bin >= 0) & (indices_bin < num_bins)].unique()
-        bins_arr = pd.Series(bins)
-        bins_arr.iloc[valid_bins] = 1
-        bins = bins_arr.tolist()
-                    
-    return bins
+        csv_files = (
+            f for f in Path(path_sensor).rglob('*.csv')
+            if f.is_file() and 'anomalias' not in f.name.lower()
+        )
 
-# --- GRAFICADO ---
-def create_schedule(path_dia, sensores_bins, bin_size=5, scale=15):
+        # Extraer los timestamps de los nombres de los archivos con el formato de nombre: acceleration_HH-MM-SS.csv
+        timestamps = [
+            datetime.strptime(f.name.split('_')[1].replace('.csv', ''), '%H-%M-%S')
+            for f in csv_files
+        ]
 
-    sensores = sorted(sensores_bins.keys(), reverse=True)
-    matriz = [sensores_bins[s] for s in sensores]
-    matriz_np = np.array(matriz)
+        return timestamps
+    
+    except Exception as e:
+        print(f"[x] Error inesperado: {e}")
+        return None
 
-    # Generar etiquetas a partir del nombre de la carpeta del sensor
-    etiquetas = [
-        f"Sensor {os.path.basename(os.path.normpath(s)).split('_', 1)[1]}"
-        if os.path.basename(os.path.normpath(s)).lower().startswith('sensor_')
-        else os.path.basename(os.path.normpath(s))
-        for s in sensores
-    ]
 
-    partes = os.path.normpath(path_dia).split(os.sep)
-    if len(partes) >= 3:
-        dia, mes, año = partes[-1], partes[-2], partes[-3]
-    else:
-        dia = mes = año = "?"
+def generate_matrix(timestamps, sensores, resolution):
+    """
+    Genera la matriz binaria que representa la actividad de los sensores a lo largo del tiempo.
+    La matriz tiene una fila por sensor y una columna por intervalo de tiempo.
+    La resolución define el tamaño de cada intervalo en minutos.
+    """
+    columnas = 1440 // resolution  # Sampling del tiempo dependiendo de la resolución
 
-    titulo = f"Train Recording Schedule - {mes.capitalize()} {dia}, {año}"
-    output_path = os.path.join(path_dia, f"train_recording_schedule.pdf")
+    # Crear la matriz binaria
+    matriz_np = np.zeros((len(sensores), columnas), dtype=int)
 
-    fig, ax = plt.subplots(figsize=(40, max(6, 0.5 * len(sensores))))
+    for i, sensor in enumerate(sensores):
+        for timestamp in timestamps[sensor]:
+            minutos = timestamp.hour * 60 + timestamp.minute
+            indice = minutos // resolution
+            matriz_np[i, indice] = 1
+
+    return matriz_np
+
+
+def create_schedule(path_dia, matriz_np, sensores, scale=15, resolution=2):
+    """
+    Crea un gráfico de programación basado en la matriz binaria y la lista de sensores.
+    """
+    if matriz_np.size == 0:
+        print(f"[!] No hay datos para graficar en: {path_dia}")
+        return
+
+    fig, ax = plt.subplots(figsize=(45, max(6, 0.5 * len(sensores))))
     ax.set_facecolor('white')
     fig.patch.set_facecolor('white')
 
-    ax.imshow(matriz, aspect='auto', cmap='Greys', interpolation='nearest')
+    ax.imshow(matriz_np, aspect='auto', cmap='Greys', interpolation='nearest')
 
-    # Dibujar bordes blancos solo en los laterales izquierdo y derecho de los bins activos (vectorizado)
-    matriz_np = np.array(matriz)
+    # Dibujar líneas verticales para cada columna para separación visual
     y_coords, x_coords = np.where(matriz_np == 1)
     for y, x in zip(y_coords, x_coords):
         # Línea izquierda
-        ax.plot([x-0.5, x-0.5], [y-0.5, y+0.5], color='white', linewidth=1)
+        ax.plot([x-0.5, x-0.5], [y-0.5, y+0.5], color='white', linewidth=1.0)
         # Línea derecha
-        ax.plot([x+0.5, x+0.5], [y-0.5, y+0.5], color='white', linewidth=1)
-        
+        ax.plot([x+0.5, x+0.5], [y-0.5, y+0.5], color='white', linewidth=1.0)
 
+    # Líneas horizontales para cada sensor
     for y in range(len(sensores)):
         ax.hlines(y, xmin=-0.5, xmax=matriz_np.shape[1] - 0.5,
                   colors='gray', linestyles='dashed', linewidth=0.7, alpha=0.5)
 
+    # Etiquetas para el eje Y
+    ylabels = [
+        f"Sensor {Path(s).parts[-1].split('_', 1)[1]}"
+        for s in sensores
+        if Path(s).name.lower().startswith('sensor_')
+    ]
+
     ax.set_yticks(range(len(sensores)))
-    ax.set_yticklabels(etiquetas, fontsize=12)
+    ax.set_yticklabels(ylabels, fontsize=12)
     ax.tick_params(axis='y', pad=10)
 
-    step = scale // bin_size
-    x_ticks = list(range(0, 1440 // bin_size, step))
-    x_labels = [f"{(i * bin_size) // 60:02d}:{(i * bin_size) % 60:02d}" for i in x_ticks]
+    step = scale // resolution
+    x_ticks = list(range(0, matriz_np.shape[1], step))
+    x_labels = [f"{(i * resolution) // 60:02d}:{(i * resolution) % 60:02d}" for i in x_ticks]
     ax.set_xticks(x_ticks)
     ax.set_xticklabels(x_labels, rotation=45)
 
     ax.set_xlim(-0.5, matriz_np.shape[1] - 0.5)
     ax.set_ylim(-0.5, len(sensores) - 0.5)
 
+    # Fecha de modificación
     fecha_mod = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     ax.text(1, 1.02, f"Last modification: {fecha_mod}", transform=ax.transAxes,
             ha='right', va='bottom', fontsize=10, color='gray')
 
     ax.set_xlabel("Time (HH:MM)")
-    ax.set_ylabel("Sensor")
+
+    partes = Path(path_dia).parts
+    dia, mes, año = (partes[-1], partes[-2], partes[-3]) if len(partes) >= 3 else ("?", "?", "?")
+
+    titulo = f"Train Recording Schedule - {mes.capitalize()} {dia}, {año}"
     ax.set_title(titulo, fontsize=18, fontweight='bold', pad=20)
+
+    output_path = Path(path_dia).joinpath("train_recording_schedule.pdf")
 
     plt.tight_layout()
     plt.savefig(output_path)
     plt.close(fig)
 
 
-
 def process_bridge(path_dia):
     """
-    Procesa un directorio de día específico, generando bins de eventos para cada sensor
+    Procesa un directorio de día específico, generando timestamps de eventos para cada sensor
     y creando un gráfico de programación de grabación.
-    Parámetros:
-    - path_dia: ruta de la carpeta del día.
-    - bin_size: tamaño del bin en minutos (default: 5).
-    - scale: cada cuanto minutos se muestra un tick en el eje X (default: 15).
     """
-    sensores_bins = {}
-  
-    sensor_dirs = [d for d in glob.glob(os.path.join(path_dia, '*/')) if os.path.isdir(d) and d.startswith(os.path.join(path_dia, 'sensor'))]
+    sensor_timestamps = {}
+
+    sensor_dirs = [
+        d for d in Path(path_dia).glob('*/')
+        if d.is_dir() and d.name.startswith('sensor')
+    ]
 
     for sensor_dir in sensor_dirs:
-        
         print(f"[+] Procesando {sensor_dir}")
-    
-        bins = bins_sensor(sensor_dir)
+        timestamps = timestamps_sensor(sensor_dir)
 
-        try:
-            if any(bins):
-                sensores_bins[sensor_dir] = bins
-            else:
-                print(f"[!] Sin eventos detectados en {sensor_dir}")
-        except Exception as e:
-            print(f"[x] Error procesando {sensor_dir}: {e}")
-            continue
-    
-    if not sensores_bins:
-        print(f"[!] Sin datos para graficar en: {path_dia}")
-        return
+        if timestamps:
+            sensor_timestamps[str(sensor_dir)] = timestamps
+        else:
+            print(f"[!] Sin eventos detectados en {sensor_dir}")
+            return
 
-    # Crear el gráfico de programación
-    print(f"[+] Generando gráfico de programación para: {path_dia}")
+    # Crear la matriz y la lista de sensores
+    sensores = sorted(sensor_timestamps.keys(), reverse=True)
+    
+    matriz_np = generate_matrix(sensor_timestamps, sensores, resolution=2)
+
+    print(f"[+] Generando gráfico para: {path_dia}")
+    
     try:
-        create_schedule(path_dia, sensores_bins)
+        create_schedule(path_dia, matriz_np, sensores)
     except Exception as e:
         print(f"[x] Error al generar el gráfico: {e}")
 
 
-def process_day(ruta_raiz, yesterday):
+def process_day(root_path):
     """
-    Procesa los datos de vibraciones del día actual y, opcionalmente, del día anterior.
-    Parámetros:
-    - ruta_raiz: ruta base que contiene la carpeta Guadiato.
-    - yesterday: hora (HH:MM) para procesar también el día anterior.
-    Si la hora actual coincide con yesterday, se procesará también el día anterior.
+    Procesa los datos del día actual, buscando carpetas de sensores y generando gráficos de programación.
+    Se espera que las carpetas sigan la estructura: root/**/año/mes/día
     """
 
-    ahora = datetime.now()
-    fechas = [ahora]
+    fecha = datetime.now()
+    
+    año = fecha.strftime('%Y')
+    mes = fecha.strftime('%B').lower()
+    dia = fecha.strftime('%d')
 
-    if yesterday and ahora.time().replace(second=0, microsecond=0) == yesterday:
-        print(f"[+] Activando proceso para procesar el día anterior: {ahora.strftime('%H:%M')}")
-        # Calcular la fecha de ayer a las 00:15
-        ayer = ahora - timedelta(days=1)
-        fechas.insert(0, ayer)  # Procesar ayer antes que hoy
+    # Se obtiene la ruta del día actual para cada puente
+    days_path = [
+        path for path in Path(root_path).rglob(f"{año}/{mes}/{dia}")
+        if path.is_dir()
+    ]
 
-    for fecha in fechas:
-        print(f"[+] Procesando fecha: {fecha.strftime('%Y-%m-%d')}")
+    if not days_path:
+        print(f"[x] No se encontró el directorio del día {fecha.strftime('%Y-%m-%d')} en {root_path}")
+        return
 
-        año = fecha.strftime('%Y')
-        mes = fecha.strftime('%B').lower()
-        dia = fecha.strftime('%d')
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        futures = {executor.submit(process_bridge, day): day for day in days_path}
+    
+    for future in concurrent.futures.as_completed(futures):
+        day = futures[future]
+        try:
+            future.result()
+        except Exception as e:
+            print(f"Error procesando {day}: {e}")
 
-        carpetas_dia = [
-            path for path in glob.iglob(os.path.join(ruta_raiz, '**', año, mes, dia), recursive=True)
-            if os.path.isdir(path)
-        ]
-
-        if not carpetas_dia:
-            print(f"[x] No se encontró la ruta de carpetas para el día: {fecha.strftime('%Y-%m-%d')}")
-            sys.exit(1)
-
-        threads = []
-        for day_path in carpetas_dia:
-            print(f"[+] Iniciando hilo para datos del día: {day_path}")
-            thread = threading.Thread(target=process_bridge, args=(day_path,))
-            thread.start()
-            threads.append(thread)
-
-        for thread in threads:
-            thread.join()
 
 if __name__ == '__main__':
     
-    VERSION = "2.0.1"
+    VERSION = "3.0.0"
 
     parser = argparse.ArgumentParser(description="Procesar y graficar los archivos de vibraciones del día actual.")
     parser.add_argument('--version', action='version', version=f'%(prog)s {VERSION}')
-    parser.add_argument('--root', type=str, required=True, help="Ruta base que contiene la carpeta Guadiato")
-    parser.add_argument('--yesterday', default='00:15', type=str, help="Hora (HH:MM) para procesar también el día anterior para graficar los datos restantes anteriores (default: 00:15:00)" \
-                                                                                "¡Atención! Este script esta gestionado por un .timer del sistema. Si se modifica esta flag, debe ser acorde a la hora de activación del timer.")
+    parser.add_argument('--root', type=str, required=True, help="Ruta base que contiene las carpetas de los puentes")
     
     args = parser.parse_args()
-
-    try:
-        yesterday = datetime.strptime(args.yesterday, "%H:%M").time()
-    except ValueError:
-        parser.error("El formato de --yesterday debe ser HH:MM (por ejemplo, 00:15)")
-
-    process_day(args.root, yesterday)
+    
+    if not Path(args.root).is_dir():
+        print(f"[x] La ruta proporcionada no es un directorio válido: {args.root}")
+        sys.exit(1)
+    
+    process_day(args.root)
