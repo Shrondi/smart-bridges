@@ -21,7 +21,7 @@ def timestamps_sensor(path_sensor):
         
         csv_files = (
             f for f in Path(path_sensor).rglob('*.csv')
-            if f.is_file() and 'anomalias' not in f.name.lower()
+            if f.is_file() and 'anomalias' not in f.parts
         )
 
         # Extraer los timestamps de los nombres de los archivos con el formato de nombre: acceleration_HH-MM-SS.csv
@@ -194,7 +194,7 @@ def process_day(root_path):
 
 if __name__ == '__main__':
     
-    VERSION = "3.0.0"
+    VERSION = "3.0.1"
 
     parser = argparse.ArgumentParser(description="Procesar y graficar los archivos de vibraciones del día actual.")
     parser.add_argument('--version', action='version', version=f'%(prog)s {VERSION}')
